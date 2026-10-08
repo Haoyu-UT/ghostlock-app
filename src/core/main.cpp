@@ -18,6 +18,7 @@
 #include "route/orchestrator.hpp"
 
 #include <array>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -26,6 +27,11 @@ using namespace ghostlock;
 
 
 int main(int argc, char **argv) {
+    /* Line-buffer stdout: the launcher redirects it to the run log file, and a
+     * block-buffered stream loses the last seconds of the attack when the
+     * device freezes mid-run (observed 2026-10-08: the log trailed the kernel
+     * trace by ~2 s at freeze time). */
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);
     try {
         profile::kernel_offsets decoded = {};
         std::array<char, 256> release_buf{};

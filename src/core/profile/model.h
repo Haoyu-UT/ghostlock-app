@@ -274,6 +274,10 @@ namespace ghostlock::profile {
             return loaded_ && values_.meta.safe_mode;
         }
 
+        [[nodiscard]] uint8_t kernel_major() const noexcept {
+            return loaded_ ? values_.meta.kernel_major : 0;
+        }
+
         [[nodiscard]] MulticastWaiterLayout multicast_layout() const noexcept {
             return loaded_
                        ? (MulticastWaiterLayout){

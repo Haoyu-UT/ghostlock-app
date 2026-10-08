@@ -267,9 +267,18 @@ namespace ghostlock::route {
         return result;
     }
 
-    /* True when the resolved policy needs the post-race ghost disarm. */
+    /* True when the resolved policy needs the post-race ghost disarm.
+     *
+     * The dangling `pi_blocked_on` is left by the 5.x PI primitive itself
+     * (remove_waiter() runs on the reclaimed stack waiter), independent of
+     * which route overwrites that waiter afterwards. The multicast policy
+     * was simply the only 5.x route that ran the disarm; every 5.x race
+     * needs it, or the next mm_struct spray can walk the ghost and panic
+     * the kernel. The multicast capability stays as a belt-and-braces OR
+     * for any non-meta route resolution on other majors. */
     [[nodiscard]] inline bool route_needs_ghost_disarm(
         const profile::TargetProfile &profile) noexcept {
+        if (profile.kernel_major() == 5) return true;
         return route_capability(profile, [](auto policy) {
             return std::decay_t<decltype(policy)>::multicast;
         });
