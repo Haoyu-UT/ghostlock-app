@@ -6,6 +6,10 @@
 
 using namespace ghostlock;
 
+namespace ghostlock::route {
+    void restore_selected_fds(void);
+}
+
 namespace ghostlock::route::select_stack {
     SelectStackRoute::SelectStackRoute(
         race::PiRace *race_context, const memory::WriteRequest *route_request,
@@ -103,18 +107,8 @@ namespace ghostlock::route::select_stack {
             return;
         }
         if (selected_fds_installed) {
-            for (int32_t fd = 3; fd < PSELECT_ROUTE_NFDS; fd++) {
-                if (owned_input_set.test(fd) || owned_output_set.test(fd) ||
-                    owned_exception_set.test(fd)) {
-                    /* The fd number may also be owned by the pipe/timerfd members: drop
-         * that owner before closing so nothing is closed twice. */
-                    if (pipe_read.get() == fd) (void) pipe_read.release();
-                    if (pipe_write.get() == fd) (void) pipe_write.release();
-                    if (block.get() == fd) (void) block.release();
-                    if (high_read.get() == fd) (void) high_read.release();
-                    close(fd);
-                }
-            }
+            /* Idempotent: a no-op once the per-attempt restore has run. */
+            route::restore_selected_fds();
             selected_fds_installed = 0;
         }
         high_read.reset();
@@ -245,6 +239,32 @@ namespace ghostlock::route {
         }
     }
 
+    /* The poisoned fd_sets' bits are the waiter stamp, not a set of fds this
+     * route owns: the dup2 pass below lands on arbitrary app fd numbers. */
+    struct SelectedFdBackupEntry {
+        int32_t fd;
+        int32_t backup; /* F_DUPFD copy; -1 when the fd was closed before */
+        int32_t cloexec;
+    };
+
+    static std::array<SelectedFdBackupEntry, PSELECT_ROUTE_NFDS> selected_fd_backup;
+    static size_t selected_fd_backup_n = 0;
+
+    void restore_selected_fds(void) {
+        for (size_t i = 0; i < selected_fd_backup_n; i++) {
+            const SelectedFdBackupEntry &e = selected_fd_backup[i];
+            if (e.backup >= 0) {
+                if (dup2(e.backup, e.fd) >= 0 && e.cloexec) {
+                    (void) fcntl(e.fd, F_SETFD, FD_CLOEXEC);
+                }
+                close(e.backup);
+            } else {
+                close(e.fd);
+            }
+        }
+        selected_fd_backup_n = 0;
+    }
+
     static void open_selected_fds(
         fd_set *in, fd_set *out, fd_set *ex, int32_t read_fd, int32_t write_fd) {
         /* every bit lands on the read end so select/pselect parks the full window */
@@ -254,11 +274,21 @@ namespace ghostlock::route {
             pr_warning("pselect F_DUPFD read errno=%d\n", errno);
             return;
         }
+        selected_fd_backup_n = 0;
+        size_t recorded = 0;
         for (int32_t fd = 0; fd < PSELECT_ROUTE_NFDS; fd++) {
             if (FD_ISSET(fd, in) || FD_ISSET(fd, out) || FD_ISSET(fd, ex)) {
+                if (recorded < selected_fd_backup.size()) {
+                    SelectedFdBackupEntry &e = selected_fd_backup[recorded++];
+                    e.fd = fd;
+                    e.backup = fcntl(fd, F_DUPFD_CLOEXEC, PSELECT_ROUTE_NFDS + 64);
+                    e.cloexec = e.backup >= 0 ? (fcntl(fd, F_GETFD) & FD_CLOEXEC) : 0;
+                }
                 dup2(high_read, fd);
             }
         }
+        /* At most PSELECT_ROUTE_NFDS bits can be set; the guard is for a resize. */
+        selected_fd_backup_n = recorded;
         close(high_read);
         dup2(read_fd, PSELECT_ROUTE_NFDS - 1);
         FD_SET(PSELECT_ROUTE_NFDS - 1, ex);
@@ -472,6 +502,7 @@ namespace ghostlock::route::select_stack {
             }
             select_errno = errno;
             route::restore_standard_io(stdio_backup);
+            route::restore_selected_fds();
             pr_info("pselect post-select attempt=%d/%d compact=%d +%.0fms ret=%d\n",
                     attempt, attempts, layout.compact_waiter.value_or(0),
                     route::fops_elapsed_ms(&route_t0), select_result);
