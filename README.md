@@ -125,10 +125,17 @@ The chain on top of the profile:
 | `30f0c14` | Keep `init_cred` alive for the boot (the cred pin) |
 | `55f3413` | Derive the lock anchor's region from the kernel image (`--anchor-scan`) |
 | `f08c49c` | Retry the cred pin and never fail a run for it |
+| `81d0cdb` | **r3**: bundle the profile, police the applied layers, digest the wire, and let a fresh install reach its first run |
 
 The last two fd fixes were the difference between "the write lands" and "the chain completes" —
 before them the route's `dup2` pass silently destroyed long-lived descriptors, so the W2 victim saw
 EOF one dance before its write landed.
+
+`81d0cdb` is the r3 change set in one commit: the built-in profile and the layer rules that stop an
+import or an old build's overrides from changing a run silently, the schema digest native refuses to
+run without, the fix that lets a fresh install run at all, and the SELinux policy working copy that
+no longer accumulates in app storage. The release notes are in the port repository; the device gate
+that verified it is described in `PORT-PLAN.md` there.
 
 ## Reproducing
 
