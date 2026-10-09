@@ -235,7 +235,8 @@ internal fun FileDescriptor.syncQuietly() {
  * fsync, but not on every line: a stage can log every few milliseconds, and an
  * fsync per line would put a synchronous disk round trip inside the run's own
  * logging path. Coalesced to [IntervalNs], which bounds what a hard reset can
- * cost to the last fraction of a second of lines.
+ * cost to the last fraction of a second of lines -- at 0.1 s, about a tenth of
+ * a second of lines, at the price of ten times the fsyncs during a run.
  */
 internal class SyncPacer(private val sync: () -> Unit) {
     private var lastNs = System.nanoTime()
@@ -252,6 +253,6 @@ internal class SyncPacer(private val sync: () -> Unit) {
     }
 
     companion object {
-        const val IntervalNs = 500_000_000L
+        const val IntervalNs = 100_000_000L
     }
 }
