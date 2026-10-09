@@ -145,6 +145,14 @@ profile 与具体的内核构建一一对应，请按上述步骤为自己的设
 - [`docs/analysis/`](docs/analysis/) —— 本移植的设计笔记与分析，包括上文所述的回归问题。
 - [`docs/kernel_profiles/`](docs/kernel_profiles/) —— 上游的移植指南与配置 schema，未改动。
 
+## 反馈问题
+
+请开 issue —— <https://github.com/Haoyu-UT/ghostlock-app-diting/issues/new/choose>。表单会要一张
+**设置 → 关于手机 → 全部参数与信息** 的截图（记得向下滚动）：里面有你的内核版本和 ROM 渠道，
+排查就是从这里开始的。每次运行后日志都会自动归档，通常只差选一次文件。
+
+先核对 `uname -r` —— **内核不同不是 bug**，而是本移植从未为其推导过的设备。见[支持的设备](#支持的设备)。
+
 ## 致谢与许可
 
 本仓库是 [YuKongA/ghostlock-app](https://github.com/YuKongA/ghostlock-app) 的 fork，

@@ -173,6 +173,16 @@ than reusing a file from here — the values differ per build, and a mismatch fa
 - [`docs/kernel_profiles/`](docs/kernel_profiles/) — upstream's porting guide and profile schema,
   unchanged.
 
+## Reporting a problem
+
+Open an issue — <https://github.com/Haoyu-UT/ghostlock-app-diting/issues/new/choose>. The form asks for a
+screenshot of **Settings → About phone → 全部参数与信息**, scrolled down: it carries your kernel version and
+your ROM channel, which is where triage starts. Every run archives its log automatically, so the log is
+usually one file pick away.
+
+Check `uname -r` first — **a different kernel is not a bug**, it is a device this port was never derived
+for. See [Supported devices](#supported-devices).
+
 ## Credits & License
 
 Fork of [YuKongA/ghostlock-app](https://github.com/YuKongA/ghostlock-app), Apache License 2.0 (see
