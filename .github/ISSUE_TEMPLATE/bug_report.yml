@@ -34,7 +34,7 @@ body:
         OS 版本下方**是否有 `by xiaomi.eu` 一行**，正是它告诉我们你的 ROM 渠道；
         仅看版本号，国行与 Xiaomi.eu 是一样的。
       placeholder: |
-        Redmi K50 Ultra · Redmi K50 Ultra / 22081212G
+        Redmi K50 Ultra · 认证型号 22081212G
         OS 版本 3.0.1.0.VLFCNXM by xiaomi.eu
         Android 版本 15 AQ3A.250226.002 | Android 安全更新 2026-01-01
         内核版本 5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284
