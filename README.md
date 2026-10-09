@@ -1,138 +1,126 @@
-# GhostLock-App
+# GhostLock — `diting` port (Redmi K50 Ultra, 5.10.236)
 
 > 中文: [README_ZH.md](README_ZH.md)
 
-## Documentation
+This is a fork of **[YuKongA/ghostlock-app](https://github.com/YuKongA/ghostlock-app)** carrying a
+port to the **Redmi K50 Ultra** (codename `diting`, SM8475 / Snapdragon 8+ Gen 1), running:
 
-- [Kernel Profile Porting Guide](docs/kernel_profiles/README.md) - add support for a new kernel. GhostLock matches kernels by exact `uname -r` and rejects unsupported builds, showing the status at the top. Built-in profiles live in `app/src/main/assets/kernel_profiles/`: one HOCON file per release, `index.conf` as the runtime index, and `<major.minor>-template.conf` version-family templates.
-- [Supported devices](docs/kernel_profiles/SUPPORTED_DEVICES.md) - the built-in kernel list.
-- [Shared execution defaults](docs/kernel_profiles/defaults.md) - every execution-tuning field, its default, and why.
-- [Profile schema](docs/kernel_profiles/PROFILE_SCHEMA.md) - full profile structure and data flow.
-- [Adding a component](docs/development/adding-a-component.md) - developer guide for a new native middleware / backend / frontend (Chinese).
-
-For the complete device-porting workflow, kernel-family template links, and tuning rationale, see the [Kernel Profile Porting Guide](docs/kernel_profiles/README.md).
-
-Rows explicitly marked **Shizuku required** run through a shell UserService. Start Shizuku with ADB and tap the status card to grant access; all other rows use the app's normal execution path.
-
-## Quick Start
-
-Open **GhostLock** and tap **Run**. KernelSU (`me.weishu.kernelsu`), ReSukiSU (`com.resukisu.resukisu`), or KowSU (`com.kowx712.supermanager`) provides `ksud` for module loading; without it, W1/W2 still grant uid 0 but no module is loaded.
-
-The execution chain is a pipeline of three components: a frontend (`root_child` startup/handoff), a backend (the CVE-2026-43499 futex primitive), and a middleware route. The catalogued combinations are instantiated at build time; the resolved profile selects which one runs. The route races two cores: on the 6.6/6.12 tree-waiter kernels the main thread hammers `select` while a consumer thread perturbs the waiter's priority; on the 6.1 compact-waiter kernels it drives `getsockopt(TCP_ZEROCOPY_RECEIVE)` through a punched-hole page; the 5.15 kernels use the multicast waiter. The CPU pair also comes from the resolved profile.
-
-## Command-Line Debugging
-
-adb/shell has no seccomp filter, so W3 is skipped - handy for quick verification:
-
-```powershell
-make -C src ghostlock
-./gradlew exportKernelProfiles
-adb push build/native/ghostlock /data/local/tmp/ghostlock
-adb push build/kernel-profiles/<release>.bin /data/local/tmp/profile.bin
-adb shell chmod 755 /data/local/tmp/ghostlock
-adb shell /data/local/tmp/ghostlock --load-prebuilt-profile /data/local/tmp/profile.bin
+```
+5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284
 ```
 
-## Offset Extraction
+Upstream supports 5.15 / 6.1 / 6.6 / 6.12. **5.10 is not among them** — there is no built-in
+profile for it, and 5.10 has no family entry in the offset extractor. This fork adds one, plus the
+fixes that turning it on required.
 
-`tools/extract_rs` derives offsets from a `boot.img` (plus optional `xbl_config.img`), a full OTA ZIP, or an `http(s)` URL pointing at one. kallsyms come from `--kallsyms` or are recovered from the image's embedded table. `pselect_waiter_shift` and `off_slide_loggers_0_1` are derived by the built-in arm64 disassembler. MediaTek images have no `xbl_config.img` and usually no BTF: the physical load address is derived from kallsyms `_text` (override with `--phys`).
+**For the app itself — usage, the offset extractor, the profile schema, the porting guide — read
+[upstream's README](https://github.com/YuKongA/ghostlock-app#readme).** This page only covers what
+the port changed and what it has been shown to do.
 
-```powershell
-Push-Location tools/extract_rs
-cargo build --release
-Pop-Location
-build/extract/release/ghostlock-extract.exe boot.img --xbl-config xbl_config.img --format conf --out profile.conf
-build/extract/release/ghostlock-extract.exe OTA.zip --format conf --out profile.conf
+## Status
+
+Verified end-to-end on a **stock, unpatched kernel** — no root beforehand, no instrumentation
+(run `Q4`; see `docs/analysis/`):
+
+| stage | result |
+|---|---|
+| W1 — SELinux → permissive | works |
+| W2 — child credential write (`child uid = 0` → `child is root!`) | works |
+| W3 — seccomp filter bypass | works |
+| Handoff — root script as `uid=0`, KernelSU loaded, SELinux back to enforcing | works, `native exited code=0` |
+
+Root is **temporary**. KernelSU is late-loaded from the exploit, so it is gone on reboot; the
+bootloader is unlocked throughout. Relocking (which wipes data) is a separate, later step and has
+not been done.
+
+### Known gap
+
+The chain completes and hands off, but the KernelSU module only loads if a **late-load-capable
+`ksud`** is reachable. The manager installed here is `com.sukisu.ultra`, which the root script's
+`ksud` search order does not match — so it falls through to `/data/adb/ksu/bin/ksud`, which has no
+`late-load` subcommand:
+
+```
+[ksu] [*] late-load kmi=android12-5.10
+[ksu] error: unrecognized subcommand 'late-load'
+[ksu] [*] late-load exit=2 → [!] KernelSU module not loaded
 ```
 
-`--format conf` is the extractor output: a flattened, self-contained profile (no `include` lines, the shared 6.x credential/KernelSnitch constants inlined, the route selected from `--analysis` evidence unless `--route` overrides it). The extractor emits every field the image actually yields and omits the rest; it never fills gaps from a neighbouring kernel family's guesses (unverified-family 6.6, the default `-2`, the 5.15 multicast constants, or a phys default). Every output is an **unverified candidate**: importable and parseable, with missing or invalid fields blocked by the app's pre-execution validation, so a successful run never implies device support. On 5.x it also derives the credential reference repair from `init_cred` and the multicast geometry from BTF (see `docs/analysis/extractor-5x-derivation-plan.md`). `--format json` stays for the v1 import path. To add a built-in profile, complete and validate the matching version-family template, save it as a standalone `.conf` profile, and add it to `kernel_profiles/index.conf`. The old C `offsets.h` registry is deprecated and removed.
+Dropping a late-load-capable `ksud` (executable) at **`/data/local/tmp/ksud`** is sufficient: it
+wins the search, and per KernelSU's LKM design that binary carries its own `kernelsu.ko` — no
+separate module file is needed.
 
-### MediaTek
+### Open regression — read before using this fork for anything but 5.10
 
-MediaTek images have no `xbl_config.img` and usually no embedded BTF, so the
-extractor cannot derive the two physical addresses (`kernel_phys_load`,
-`kernel_phys_offset`) from the image and leaves them `null`. The runtime then
-falls back to the SoC formula, which fails at W1 on MediaTek. Fill both by
-running the separate `tools/mtk-phys/` extractor on a rooted device (it reads
-`/proc/iomem`) and pasting the values into the app's advanced overrides. See
-[MEDIATEK.md](docs/kernel_profiles/MEDIATEK.md).
+The fix that makes the compact waiter work on 5.10 rewrote a **shared, unguarded** line in the page
+builder, and `compact_waiter` is a document-global flag covering three different
+`struct rt_mutex_waiter` layouts. The result is that **19 built-in 6.1 profiles and 5 built-in 5.15
+profiles build a waiter whose `prio` reads 0 (highest) on their kernels.**
 
-### Preflight
+- 5.10 has `int prio` at `0x40` as plain padding-free layout
+- 5.15 / 6.1 have `unsigned int wake_state` at `0x40` and `int prio` at `0x44`
 
-The extractor disassembles `remove_waiter()` before extracting offsets. Kernels with the fix are rejected with exit code `6`; only vulnerable kernels continue.
+6.6 / 6.12 are unaffected (they set no `compact_waiter`). The full analysis, blast radius, and the
+planned fix are in
+[`docs/analysis/waiter-layout-family-gating-plan.md`](docs/analysis/waiter-layout-family-gating-plan.md).
+**Do not build this branch for a 5.15 or 6.1 device until that is fixed.**
 
-### On-device analysis
+## What the port changed
 
-A full OTA can be analyzed entirely on the phone: `boot` plus `xbl_config`
-are extracted automatically. Pass `--work-dir` an app-writable dir when
-running inside the app sandbox. Cross-compile and push:
+The route is **`select_stack`** (the pselect path), with `waiter_shift = -2` and the 5.10
+**compact** waiter — the 10-word
+`{tree_entry, pi_tree_entry, task, lock, int prio, u64 deadline, ww_ctx}` shape, derived statically
+from `boot.img` and confirmed live on the device with kprobes (the waiter and the `stack_fds`
+buffer land on the same stack address, delta 0).
 
-```powershell
-rustup target add aarch64-linux-android
-$ndk = "$env:ANDROID_HOME\ndk\<version>\toolchains\llvm\prebuilt\windows-x86_64\bin"
-$env:CC_aarch64_linux_android = "$ndk\aarch64-linux-android35-clang.cmd"
-$env:AR_aarch64_linux_android = "$ndk\llvm-ar.exe"
-$env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = $env:CC_aarch64_linux_android
-Push-Location tools/extract_rs
-cargo build --release --target aarch64-linux-android
-Pop-Location
-adb push build/extract/aarch64-linux-android/release/ghostlock-extract /data/local/tmp/
-adb shell /data/local/tmp/ghostlock-extract /sdcard/OTA.zip
-```
+The chain on top of the profile:
 
-### Importing offsets without rebuilding the app
+| commit | change |
+|---|---|
+| `6c8b18a` | Disarm the ghost on 5.x kernels; line-buffer the run log |
+| `c1b8569` | Keep the victim's protocol fds out of the select route's fd range |
+| `765b137` | Snapshot and restore every fd the select route's `dup2` pass clobbers |
+| `9acf2f1` | Perform zero writes through the erase's collateral (the 5.10 leaf layout) |
+| `a703604` | Carry `lock_anchor_image` from the profile document through to the wire |
+| `6e70e8c` | Port plans and analysis documents |
 
-New kernels no longer need an app rebuild: tap **Import offsets.conf (HOCON)**
-and pick the extractor's flattened `.conf`, or use **Import offsets.json (v1)**
-for an older JSON report. v1 JSON is converted in-app, so nothing has to be
-pushed to the device: native always starts from the GLK1 document the app sends
-on stdin, and matches the current `uname -r` against the resolved profile
-before rejecting the kernel. Imports merge across files; a release already
-stored prompts before overwrite.
+The last two fd fixes were the difference between "the write lands" and "the chain completes" —
+before them the route's `dup2` pass silently destroyed long-lived descriptors, so the W2 victim saw
+EOF one dance before its write landed.
 
-The app can also generate the profile itself — **Parse OTA link** (full OTA ZIP
-URL) and **Parse image** (`boot.img` + optional `xbl_config.img`) run the
-extractor in-process and write a flattened `.conf` into the app data dir on
-success:
+## Reproducing
 
-```hocon
-# GhostLock kernel profile: 6.12.38-android16-5-g844001fb8721-ab14552068-4k (HOCON, self-contained).
-release = "6.12.38-android16-5-g844001fb8721-ab14552068-4k"
-schema_version = 1
-kernel_major = 6
-recommend_shizuku = 0
-kernel_phys_load = 0xC7800000
-route {
-  select_stack {
-    waiter_shift = 0
-  }
-}
-fallback {
-  to = "none"
-}
-kernelsnitch {
-  collisions = 4
-}
-task_struct {
-  prio = 148
-  cred = 2304
-}
-cred {
-  caps_offset = 48
-  copy_size = 136
-  usage_value = 1
-  caps_count = 5
-  caps_value = -1
-}
-offset {
-  init_task = 37801728
-  init_cred = 37891184
-}
-```
+The profile is **not** a built-in asset; it is imported as a user document.
+
+1. Extract on a host (`--iomem /dev/null` — the tool otherwise reads the *build host's*
+   `/proc/iomem` and silently produces a plausible wrong `kernel_phys_load`):
+
+   ```sh
+   ghostlock-extract boot.img --iomem /dev/null --phys 0xa8000000 --format conf --out profile.conf
+   ```
+
+2. Import it in the app: **配置参数 → 导入 offsets.conf（v2）**. An imported user document takes
+   precedence over the built-ins.
+3. Set `settings_enable_monitor_phantom_procs = false` from a root shell. Android's phantom-process
+   trimmer otherwise SIGKILLs the native binary mid-run (the 272 spray children blow past the
+   platform cap), which is indistinguishable from an exploit failure. This needs
+   `WRITE_SECURE_SETTINGS`, so `adb shell` cannot set it.
+4. Run.
+
+The port's own profile, with every value annotated with how it was derived and verified, is kept
+outside this repository along with the evidence trail (app logs, kernel traces, oops texts).
+
+## Layout
+
+- [`docs/analysis/`](docs/analysis/) — plan documents: the payload page, the waiter lifetime, the
+  zero-write descent, and the waiter-layout regression above.
+- [`docs/kernel_profiles/`](docs/kernel_profiles/) — upstream's porting guide and profile schema,
+  unchanged.
 
 ## Credits & License
 
-Based on the following projects, licensed under Apache License 2.0 (see [LICENSE](LICENSE)):
+Fork of [YuKongA/ghostlock-app](https://github.com/YuKongA/ghostlock-app), Apache License 2.0 (see
+[LICENSE](LICENSE)). Upstream in turn credits:
 
 - [NebuSec/CyberMeowfia](https://github.com/NebuSec/CyberMeowfia)
 - [JoinChang/ghostlock-oneplus](https://github.com/JoinChang/ghostlock-oneplus)

@@ -1,124 +1,116 @@
-# GhostLock-App
+# GhostLock — `diting` 移植版（Redmi K50 Ultra，5.10.236）
 
 > English: [README.md](README.md)
 
-## 文档
+本仓库是 **[YuKongA/ghostlock-app](https://github.com/YuKongA/ghostlock-app)** 的 fork，
+移植目标是 **Redmi K50 Ultra**（代号 `diting`，SM8475 / 骁龙 8+ Gen 1），运行内核：
 
-- [Kernel Profile 适配指南](docs/kernel_profiles/README_ZH.md) —— 如何支持一款新内核。GhostLock 按精确 `uname -r` 匹配，未匹配的内核直接拒绝运行并在 App 顶部显示状态。内置配置位于 `app/src/main/assets/kernel_profiles/`：每个 release 一个 HOCON 文件，`index.conf` 保存运行索引，`<major.minor>-template.conf` 提供各内核大版本模板。
-- [支持设备列表](docs/kernel_profiles/SUPPORTED_DEVICES_ZH.md) —— 内置内核清单。
-- [公共执行默认值](docs/kernel_profiles/defaults_ZH.md) —— 每个 `execution` 字段的默认值与取舍。
-- [Profile 结构文档](docs/kernel_profiles/PROFILE_SCHEMA_ZH.md) —— profile 的完整结构、字段语义与数据流。
-- [新增组件指南](docs/development/adding-a-component.md) —— 为 native 添加新 middleware / backend / frontend 的开发者指南。
-
-新增设备的完整流程、内核版本模板跳转和公共参数理由见[Kernel Profile 适配指南](docs/kernel_profiles/README_ZH.md)。
-
-明确标记为**需要 Shizuku**的固件通过 shell UserService 执行。先使用 ADB 启动 Shizuku，再点击顶部支持状态区域授权；其余固件沿用应用内执行路径。
-
-## 快速开始
-
-打开 **GhostLock** 点击 **执行**。需先装 KernelSU（`me.weishu.kernelsu`）、ReSukiSU（`com.resukisu.resukisu`）或 KowSU（`com.kowx712.supermanager`）以提供 `ksud`；缺 `ksud` 时 W1/W2 仍可拿到 uid 0，但不会加载模块。
-
-执行链由三类组件构成：frontend（`root_child` 启动/交接）、backend（CVE-2026-43499 futex 原语）与 middleware 路线。**编目组合在构建期实例化，具体运行哪一个由解析后的 profile 选择**。路线是双核竞争：6.6/6.12 树形 waiter 内核上主线程跑 `select` 爆破、consumer 线程扰动 waiter 优先级；6.1 紧凑 waiter 内核上主线程改走 `getsockopt(TCP_ZEROCOPY_RECEIVE)` 打洞页写入；5.15 内核走 multicast waiter 路线。CPU 对同样由解析后的 profile 决定。
-
-## 命令行调试
-
-adb/shell 环境无 seccomp 过滤，会跳过 W3，适合快速验证：
-
-```powershell
-make -C src ghostlock
-./gradlew exportKernelProfiles
-adb push build/native/ghostlock /data/local/tmp/ghostlock
-adb push build/kernel-profiles/<release>.bin /data/local/tmp/profile.bin
-adb shell chmod 755 /data/local/tmp/ghostlock
-adb shell /data/local/tmp/ghostlock --load-prebuilt-profile /data/local/tmp/profile.bin
+```
+5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284
 ```
 
-## 偏移量提取
+上游支持 5.15 / 6.1 / 6.6 / 6.12。**5.10 不在其中**——既没有内置配置，偏移提取器也没有
+5.10 的族条目。本 fork 补上了这一款，以及让它跑通所必需的几处修复。
 
-`tools/extract_rs` 从 `boot.img`（可加 `xbl_config.img`）、完整 OTA zip 或指向它的 `http(s)` 链接解析偏移量。kallsyms 传 `--kallsyms`，或省略以直接恢复镜像内嵌表。`pselect_waiter_shift` 与 `off_slide_loggers_0_1` 由内置 arm64 反汇编器推导。联发科镜像没有 `xbl_config.img` 且通常无内嵌 BTF：物理加载地址由 kallsyms `_text` 推导（可用 `--phys` 覆盖）。
+**关于 App 本身——使用方法、偏移提取器、配置 schema、移植指南——请阅读
+[上游 README](https://github.com/YuKongA/ghostlock-app/blob/main/README_ZH.md)。**
+本页只说明移植改了什么、以及已经验证到什么程度。
 
-```powershell
-Push-Location tools/extract_rs
-cargo build --release
-Pop-Location
-build/extract/release/ghostlock-extract.exe boot.img --xbl-config xbl_config.img --format conf --out profile.conf
-build/extract/release/ghostlock-extract.exe OTA.zip --format conf --out profile.conf
+## 当前状态
+
+已在**原厂、未打补丁的内核**上端到端验证通过——事先无 root，无任何插桩（run `Q4`，
+详见 `docs/analysis/`）：
+
+| 阶段 | 结果 |
+|---|---|
+| W1 — SELinux 改为 permissive | 通过 |
+| W2 — 子进程凭据覆写（`child uid = 0` → `child is root!`） | 通过 |
+| W3 — 绕过 seccomp 过滤器 | 通过 |
+| 交接 — root 脚本以 `uid=0` 运行、KernelSU 加载、SELinux 恢复 enforcing | 通过，`native exited code=0` |
+
+root 是**临时的**。KernelSU 由漏洞利用现场 late-load，因此重启即失效；全程 bootloader 保持
+解锁。重新上锁（会清空数据）是后续独立步骤，目前尚未执行。
+
+### 已知缺口
+
+整条链会跑完并交接，但 **KernelSU 模块只有在能找到「支持 late-load 的 `ksud`」时才会加载**。
+本机安装的管理器是 `com.sukisu.ultra`，root 脚本的 `ksud` 搜索顺序匹配不到它，于是回退到
+`/data/adb/ksu/bin/ksud`，而该版本没有 `late-load` 子命令：
+
+```
+[ksu] [*] late-load kmi=android12-5.10
+[ksu] error: unrecognized subcommand 'late-load'
+[ksu] [*] late-load exit=2 → [!] KernelSU module not loaded
 ```
 
-提取结果使用 `--format conf` 输出：flatten（无 `include`、凭据/KernelSnitch 常量内联）的自包含 profile。提取器把镜像实际获得的所有字段都写出，未获得的字段直接省略，不会用相邻内核族的猜测值（未验证族的 6.6、缺省 `-2`、5.15 multicast 常量、phys 默认）补齐；route 由 `--analysis` 证据建议、`--route` 可覆盖。输出一律是 **unverified candidate**：可导入、可解析，缺失或无效字段由 App 在执行前校验拦截，不能仅凭生成成功声明设备支持。5.x 还会从 `init_cred` 推导凭据引用修复值、从 BTF 推导 multicast 几何（见 `docs/analysis/extractor-5x-derivation-plan.md`）。`--format json` 保留给 v1 导入路径。新增内置配置时以对应大版本模板为基础补齐和验证字段，再将独立 `.conf` 登记到 `kernel_profiles/index.conf`。旧 C `offsets.h` 注册表已经弃用并移除。
+把一个**支持 late-load 的 `ksud`**（可执行文件）放到 **`/data/local/tmp/ksud`** 即可解决：
+它会赢得搜索顺序，且按 KernelSU 的 LKM 设计，该二进制内部自带 `kernelsu.ko`，无需另放模块文件。
 
-### 联发科
+### 未修复的回归——除 5.10 之外的机型请先读这一段
 
-联发科镜像没有 `xbl_config.img`，通常也没有内嵌 BTF，提取器无法从镜像推导两个物理地址
-（`kernel_phys_load`、`kernel_phys_offset`），会把它们留成 `null`。运行时按 SoC 公式回退，在联发科上
-会在 W1 失败。请先在已 root 的设备上运行单独的 `tools/mtk-phys/` 提取器（读取 `/proc/iomem`），
-再把两个值填入 App 的高级参数覆盖。参见 [MEDIATEK_ZH.md](docs/kernel_profiles/MEDIATEK_ZH.md)。
+让 compact waiter 在 5.10 上工作的那处修复，改写了页面构造器中**一行被共享且未加保护**的代码；
+而 `compact_waiter` 是一个文档级全局开关，覆盖了三种不同的 `struct rt_mutex_waiter` 布局。
+结果是：**19 个内置 6.1 配置与 5 个内置 5.15 配置，会在各自内核上构造出 `prio` 读作 0（最高优先级）
+的 waiter。**
 
-### 前置检查
+- 5.10：`int prio` 位于 `0x40`，其后无字段填充
+- 5.15 / 6.1：`unsigned int wake_state` 位于 `0x40`，`int prio` 位于 `0x44`
 
-提取器在提取偏移量前先反汇编 `remove_waiter()`。已包含修复的内核以退出码 `6` 拒绝；仅未修复内核继续。
+6.6 / 6.12 不受影响（它们不设置 `compact_waiter`）。完整分析、影响范围与修复方案见
+[`docs/analysis/waiter-layout-family-gating-plan.md`](docs/analysis/waiter-layout-family-gating-plan.md)。
+**在该问题修复之前，请勿用本分支为 5.15 或 6.1 设备构建。**
 
-### 手机端运行
+## 移植改动了什么
 
-完整 OTA 可直接在手机上分析：传完整包时自动提取 `boot` + `xbl_config`。在 App 沙箱内运行时，`--work-dir` 必须指向 App 可写目录。交叉编译后 push：
+路线为 **`select_stack`**（pselect 路径），`waiter_shift = -2`，使用 5.10 的 **compact**
+waiter —— 10 字布局
+`{tree_entry, pi_tree_entry, task, lock, int prio, u64 deadline, ww_ctx}`。该几何由 `boot.img`
+静态推导，并用 kprobe 在设备上实测确认（waiter 与 `stack_fds` 缓冲区落在同一栈地址，delta 为 0）。
 
-```powershell
-rustup target add aarch64-linux-android
-$ndk = "$env:ANDROID_HOME\ndk\<version>\toolchains\llvm\prebuilt\windows-x86_64\bin"
-$env:CC_aarch64_linux_android = "$ndk\aarch64-linux-android35-clang.cmd"
-$env:AR_aarch64_linux_android = "$ndk\llvm-ar.exe"
-$env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = $env:CC_aarch64_linux_android
-Push-Location tools/extract_rs
-cargo build --release --target aarch64-linux-android
-Pop-Location
-adb push build/extract/aarch64-linux-android/release/ghostlock-extract /data/local/tmp/
-adb shell /data/local/tmp/ghostlock-extract /sdcard/OTA.zip
-```
+配置之外，链路改动如下：
 
-### 外部导入偏移，免去重新构建应用
+| commit | 改动 |
+|---|---|
+| `6c8b18a` | 在 5.x 内核上关闭 ghost；运行日志改为行缓冲 |
+| `c1b8569` | 让受害进程的协议 fd 避开 select 路线的 fd 区间 |
+| `765b137` | 快照并恢复 select 路线 `dup2` 过程覆盖的每一个 fd |
+| `9acf2f1` | 零值写入改由 erase 的 collateral 完成（5.10 leaf 布局） |
+| `a703604` | 让 `lock_anchor_image` 从配置文档一路传到 wire |
+| `6e70e8c` | 移植计划与分析文档 |
 
-新增内核不再需要重新打包 App：点击 **导入 offsets.conf (HOCON)** 选择提取器产出的扁平 `.conf`，旧 JSON 报告仍可通过 **导入 offsets.json (v1)** 导入。v1 JSON 由 App 侧转成 GLK1，无需再把文件推到设备；native 始终只接收 App 经 stdin 传入的 GLK1 文档，并先按当前 `uname -r` 匹配解析后的 profile，匹配成功才视为受支持。多次导入会合并；新文件含已存内核时，App 会先询问是否覆盖。
+后两处 fd 修复是「写入能落地」与「整条链跑通」的分界：在此之前，路线的 `dup2` 过程会静默销毁
+长期存活的描述符，导致 W2 的受害子进程在写入落地前一轮就看到 EOF 退出。
 
-App 也能直接生成这份 profile：**解析完整包链接**（完整 OTA zip 的 `http(s)` 链接）与 **解析镜像**（`boot.img` + 可选 `xbl_config.img`）都在 App 进程内跑提取器，成功后把一份扁平 `.conf` 写入 App 数据目录：
+## 复现步骤
 
-```hocon
-# GhostLock kernel profile: 6.12.38-android16-5-g844001fb8721-ab14552068-4k (HOCON, self-contained).
-release = "6.12.38-android16-5-g844001fb8721-ab14552068-4k"
-schema_version = 1
-kernel_major = 6
-recommend_shizuku = 0
-kernel_phys_load = 0xC7800000
-route {
-  select_stack {
-    waiter_shift = 0
-  }
-}
-fallback {
-  to = "none"
-}
-kernelsnitch {
-  collisions = 4
-}
-task_struct {
-  prio = 148
-  cred = 2304
-}
-cred {
-  caps_offset = 48
-  copy_size = 136
-  usage_value = 1
-  caps_count = 5
-  caps_value = -1
-}
-offset {
-  init_task = 37801728
-  init_cred = 37891184
-}
-```
+配置文件**不是**内置资源，而是以用户文档方式导入。
 
-## 来源与许可证
+1. 在主机上提取（务必加 `--iomem /dev/null`——否则工具会去读**构建主机**的 `/proc/iomem`，
+   并静默给出一个看似合理的错误 `kernel_phys_load`）：
 
-基于以下项目改写，继承 Apache License 2.0（见 [LICENSE](LICENSE)）：
+   ```sh
+   ghostlock-extract boot.img --iomem /dev/null --phys 0xa8000000 --format conf --out profile.conf
+   ```
+
+2. 在 App 中导入：**配置参数 → 导入 offsets.conf（v2）**。导入的用户文档优先于内置配置。
+3. 用 root shell 设置 `settings_enable_monitor_phantom_procs = false`。否则 Android 的
+   phantom-process 清理机制会在运行中途 SIGKILL 掉 native 进程（272 个 spray 子进程远超平台上限），
+   其现象与漏洞利用失败无法区分。该设置需要 `WRITE_SECURE_SETTINGS`，`adb shell` 无法写入。
+4. 运行。
+
+本移植所用的配置文件（每个取值都标注了推导与验证方式）与证据链（App 日志、内核 trace、
+oops 文本）保存在本仓库之外。
+
+## 目录
+
+- [`docs/analysis/`](docs/analysis/) —— 计划文档：payload page、waiter 生命周期、零值写入的
+  descent，以及上文所述的 waiter 布局回归。
+- [`docs/kernel_profiles/`](docs/kernel_profiles/) —— 上游的移植指南与配置 schema，未改动。
+
+## 致谢与许可
+
+本仓库是 [YuKongA/ghostlock-app](https://github.com/YuKongA/ghostlock-app) 的 fork，
+采用 Apache License 2.0（见 [LICENSE](LICENSE)）。上游另致谢：
 
 - [NebuSec/CyberMeowfia](https://github.com/NebuSec/CyberMeowfia)
 - [JoinChang/ghostlock-oneplus](https://github.com/JoinChang/ghostlock-oneplus)
