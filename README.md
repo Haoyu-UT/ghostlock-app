@@ -53,26 +53,36 @@ Verified end-to-end on a **stock, unpatched kernel** — no root beforehand, no 
 | W3 — seccomp filter bypass | works |
 | Handoff — root script as `uid=0`, KernelSU loaded, SELinux back to enforcing | works, `native exited code=0` |
 
+Repeat runs in one boot are stable as well: **8 consecutive runs completed, with no freeze and no
+reboot**, after fixing the two causes that ended earlier series — anchor slots reused across
+processes
+([`anchor-slot-persistence-plan.md`](docs/analysis/anchor-slot-persistence-plan.md)) and
+`init_cred` freed under the rooted children
+([`init-cred-lifetime-plan.md`](docs/analysis/init-cred-lifetime-plan.md)).
+
 Root is **temporary**. KernelSU is late-loaded from the exploit, so it is gone on reboot; the
 bootloader is unlocked throughout. Relocking (which wipes data) is a separate, later step and has
 not been done.
 
-### Known gap
+### KernelSU handoff
 
-The chain completes and hands off, but the KernelSU module only loads if a **late-load-capable
-`ksud`** is reachable. The manager installed here is `com.sukisu.ultra`, which the root script's
-`ksud` search order does not match — so it falls through to `/data/adb/ksu/bin/ksud`, which has no
-`late-load` subcommand:
+The chain completes and hands off either way; whether the **KernelSU module** ends up loaded depends
+on a **late-load-capable `ksud`** being reachable. The app copies one out of an installed manager it
+recognises — `me.weishu.kernelsu` (KernelSU), `me.weishu.kernelsu.pr` (KernelSU-Next),
+`com.resukisu.resukisu` (ReSukiSU) or `com.kowx712.supermanager` — into its own files directory, and
+the root script prefers that copy. The verified setup is **ReSukiSU** (`com.resukisu.resukisu`):
 
 ```
-[ksu] [*] late-load kmi=android12-5.10
-[ksu] error: unrecognized subcommand 'late-load'
-[ksu] [*] late-load exit=2 → [!] KernelSU module not loaded
+[ksu] [*] ksud=/data/user/0/com.ghostlock.app/files/ksud
+[ksu] [+] KernelSU module loaded
+[+] KernelSU ready
 ```
 
-Dropping a late-load-capable `ksud` (executable) at **`/data/local/tmp/ksud`** is sufficient: it
-wins the search, and per KernelSU's LKM design that binary carries its own `kernelsu.ko` — no
-separate module file is needed.
+A manager outside that list — the earlier `com.sukisu.ultra`, for example — is not matched, and the
+script falls through to `/data/adb/ksu/bin/ksud`, some builds of which have no `late-load`
+subcommand, leaving the module unloaded. A late-load-capable `ksud` executable at
+**`/data/local/tmp/ksud`** is also picked up; per KernelSU's LKM design, that binary carries its own
+`kernelsu.ko`, so no separate module file is needed.
 
 ### Open regression — read this before using the fork on anything but a 5.10 device
 
@@ -110,6 +120,11 @@ The chain on top of the profile:
 | `9acf2f1` | Perform zero writes through the erase's collateral (the 5.10 leaf layout) |
 | `a703604` | Carry `lock_anchor_image` from the profile document through to the wire |
 | `6e70e8c` | Port plans and analysis documents |
+| `0f76309` | Make the anchor region's slots safe, batched and profile-sized |
+| `75f64c1` | Report why the W2 verifier gave up |
+| `30f0c14` | Keep `init_cred` alive for the boot (the cred pin) |
+| `55f3413` | Derive the lock anchor's region from the kernel image (`--anchor-scan`) |
+| `f08c49c` | Retry the cred pin and never fail a run for it |
 
 The last two fd fixes were the difference between "the write lands" and "the chain completes" —
 before them the route's `dup2` pass silently destroyed long-lived descriptors, so the W2 victim saw

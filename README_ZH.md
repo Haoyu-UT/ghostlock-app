@@ -50,23 +50,33 @@ profile**——SoC 不同，预计不会搭载同一份经过认证的内核构�
 | W3 — 绕过 seccomp 过滤器 | 通过 |
 | 交接 — root 脚本以 `uid=0` 运行、KernelSU 加载、SELinux 恢复 enforcing | 通过，`native exited code=0` |
 
+单次启动内连续多次运行同样稳定：**连续 8 次运行全部完成，无死机、无重启**。此前终结多轮系列的两个
+原因均已修复——anchor 槽位跨进程复用
+（[`anchor-slot-persistence-plan.md`](docs/analysis/anchor-slot-persistence-plan.md)），以及
+`init_cred` 被已 root 的子进程释放
+（[`init-cred-lifetime-plan.md`](docs/analysis/init-cred-lifetime-plan.md)）。
+
 root 是**临时的**。KernelSU 由漏洞利用现场 late-load，因此重启即失效；全程 bootloader 保持
 解锁。重新上锁（会清空数据）是后续独立步骤，目前尚未执行。
 
-### 已知缺口
+### KernelSU 交接
 
-整条链会跑完并交接，但 **KernelSU 模块只有在能找到「支持 late-load 的 `ksud`」时才会加载**。
-本机安装的管理器是 `com.sukisu.ultra`，root 脚本的 `ksud` 搜索顺序匹配不到它，于是回退到
-`/data/adb/ksu/bin/ksud`，而该版本没有 `late-load` 子命令：
+无论哪种情况，整条链都会跑完并交接；**KernelSU 模块**最终能否加载，取决于能否找到
+**支持 late-load 的 `ksud`**。App 会从已安装且被它识别的管理器中复制一个——`me.weishu.kernelsu`
+（KernelSU）、`me.weishu.kernelsu.pr`（KernelSU-Next）、`com.resukisu.resukisu`（ReSukiSU）、
+`com.kowx712.supermanager`——到自己的 files 目录，root 脚本优先使用这份副本。已验证的组合是
+**ReSukiSU**（`com.resukisu.resukisu`）：
 
 ```
-[ksu] [*] late-load kmi=android12-5.10
-[ksu] error: unrecognized subcommand 'late-load'
-[ksu] [*] late-load exit=2 → [!] KernelSU module not loaded
+[ksu] [*] ksud=/data/user/0/com.ghostlock.app/files/ksud
+[ksu] [+] KernelSU module loaded
+[+] KernelSU ready
 ```
 
-把一个**支持 late-load 的 `ksud`**（可执行文件）放到 **`/data/local/tmp/ksud`** 即可解决：
-它会赢得搜索顺序，且按 KernelSU 的 LKM 设计，该二进制内部自带 `kernelsu.ko`，无需另放模块文件。
+不在该列表中的管理器——例如更早用过的 `com.sukisu.ultra`——不会被匹配，脚本会回退到
+`/data/adb/ksu/bin/ksud`，其中部分构建没有 `late-load` 子命令，模块因此不会加载。把一个
+**支持 late-load 的 `ksud`**（可执行文件）放到 **`/data/local/tmp/ksud`** 同样会被采用；
+按 KernelSU 的 LKM 设计，该二进制内部自带 `kernelsu.ko`，无需另放模块文件。
 
 ### 未修复的回归——除 5.10 机型外，使用本 fork 前请先读这一段
 
@@ -101,6 +111,11 @@ waiter —— 10 字布局
 | `9acf2f1` | 零值写入改由 erase 的 collateral 完成（5.10 leaf 布局） |
 | `a703604` | 让 `lock_anchor_image` 从配置文档一路传到 wire |
 | `6e70e8c` | 移植计划与分析文档 |
+| `0f76309` | 让 anchor 区域的槽位安全、按批预留并按配置尺寸划分 |
+| `75f64c1` | 说明 W2 校验器为何放弃 |
+| `30f0c14` | 让 `init_cred` 在整个启动周期内存活（cred pin） |
+| `55f3413` | 从内核镜像推导 lock anchor 区域（`--anchor-scan`） |
+| `f08c49c` | cred pin 改为重试，且不再因它让整次运行失败 |
 
 后两处 fd 修复是「写入能落地」与「整条链跑通」的分界：在此之前，路线的 `dup2` 过程会静默销毁
 长期存活的描述符，导致 W2 的受害子进程在写入落地前一轮就看到 EOF 退出。
