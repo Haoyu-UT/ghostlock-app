@@ -177,8 +177,8 @@ than reusing a file from here — the values differ per build, and a mismatch fa
 
 Open an issue — <https://github.com/Haoyu-UT/ghostlock-app-diting/issues/new/choose>. The form asks for a
 screenshot of **Settings → About phone → 全部参数与信息**, scrolled down: it carries your kernel version and
-your ROM channel, which is where triage starts. Every run archives its log automatically, so the log is
-usually one file pick away.
+your ROM channel, which is where triage starts. Every run is kept on the device: tap **Export log & report** on the
+main screen, pick the run, and save the zip wherever you like — that zip is what to attach.
 
 Check `uname -r` first — **a different kernel is not a bug**, it is a device this port was never derived
 for. See [Supported devices](#supported-devices).

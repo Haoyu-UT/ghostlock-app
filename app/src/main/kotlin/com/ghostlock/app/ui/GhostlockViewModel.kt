@@ -11,6 +11,7 @@ import com.ghostlock.app.domain.model.LogTone
 import com.ghostlock.app.domain.model.OffsetImportResult
 import com.ghostlock.app.domain.model.ParseResult
 import com.ghostlock.app.domain.model.ProfileConfig
+import com.ghostlock.app.domain.model.RunLogEntry
 import com.ghostlock.app.domain.model.ProfileFieldNode
 import com.ghostlock.app.domain.model.ShizukuStatus
 import com.ghostlock.app.domain.repository.GhostlockRepository
@@ -35,8 +36,10 @@ import kotlinx.coroutines.withContext
 
 sealed interface GhostlockEffect {
     data class PickDocument(val request: DocumentRequest) : GhostlockEffect
-    data object PickDebugFolder : GhostlockEffect
     data class CreateProfileDocument(val suggestedName: String) : GhostlockEffect
+
+    /** Save dialog for one retained run log; the app streams the zip into it. */
+    data class CreateRunLogDocument(val suggestedName: String) : GhostlockEffect
     data class Share(val uri: String) : GhostlockEffect
     data class Toast(val resourceId: Int) : GhostlockEffect
     data class Clipboard(val text: String) : GhostlockEffect
@@ -94,9 +97,23 @@ class GhostlockViewModel(
         repository.setShizukuStatusListener { refreshAccessStatus() }
         viewModelScope.launch {
             refreshSnapshot()
+            markInterruptedRunLogs()
             applyRecommendedShizuku()
             maybeSuggestShizukuForW3()
         }
+    }
+
+    private var interruptedRunLogsMarked = false
+
+    /**
+     * A run writes a terminal state when it ends, so anything still `running`
+     * when the app starts was killed with the device — the case a report is
+     * usually about. Naming it here costs one directory scan per start.
+     */
+    private suspend fun markInterruptedRunLogs() {
+        if (interruptedRunLogsMarked) return
+        interruptedRunLogsMarked = true
+        runCatching { repository.markInterruptedRunLogs() }
     }
 
     private var recommendedShizukuApplied = false
@@ -141,6 +158,10 @@ class GhostlockViewModel(
                 } else {
                     R.string.run_interrupted_message
                 },
+                /* Both notices that say "your run did not finish" carry the
+                 * export: whichever one a reporter is looking at, the log they
+                 * need to send is one tap away. */
+                dialogExportLog = true,
             )
         }
     }
@@ -257,7 +278,6 @@ class GhostlockViewModel(
             mutableState.update {
                 it.copy(
                     debugExportEnabled = settings.exportEnabled,
-                    debugExportLocation = settings.exportLocation,
                     debugKernelLogEnabled = settings.kernelLogEnabled,
                 )
             }
@@ -485,15 +505,46 @@ class GhostlockViewModel(
         mutableState.update { it.copy(debugExportEnabled = enabled) }
     }
 
-    fun onDebugExportLocationPick() = send(GhostlockEffect.PickDebugFolder)
+    private var pendingRunLogStamp: String? = null
 
-    fun onDebugExportLocationPicked(location: String?) {
-        if (location.isNullOrBlank()) {
-            send(GhostlockEffect.Toast(R.string.debug_export_location_unsupported))
-            return
+    /** Opens the picker over the runs kept on the device. */
+    fun onExportRunLog() {
+        viewModelScope.launch {
+            val runs = runCatching { repository.listRunLogs() }.getOrDefault(emptyList())
+            mutableState.update { it.copy(runLogs = runs, runLogPickerVisible = true) }
         }
-        repository.setDebugExportLocation(location)
-        mutableState.update { it.copy(debugExportLocation = location) }
+    }
+
+    fun onRunLogPickerDismiss() =
+        mutableState.update { it.copy(runLogPickerVisible = false) }
+
+    fun onRunLogSelected(stamp: String) {
+        pendingRunLogStamp = stamp
+        mutableState.update { it.copy(runLogPickerVisible = false) }
+        send(GhostlockEffect.CreateRunLogDocument("$stamp.zip"))
+    }
+
+    fun onExportRunLogDocumentPicked(documentUri: String?) {
+        val stamp = pendingRunLogStamp ?: return
+        pendingRunLogStamp = null
+        if (documentUri.isNullOrBlank()) return
+        viewModelScope.launch {
+            val ok = runCatching { repository.exportRunLog(stamp, documentUri) }
+                .getOrDefault(false)
+            send(
+                GhostlockEffect.Toast(
+                    if (ok) R.string.run_log_export_done else R.string.export_failed,
+                ),
+            )
+        }
+    }
+
+    fun onClearRunLogs() {
+        viewModelScope.launch {
+            runCatching { repository.clearRunLogs() }
+            mutableState.update { it.copy(runLogs = emptyList(), runLogPickerVisible = false) }
+            send(GhostlockEffect.Toast(R.string.run_log_cleared))
+        }
     }
 
     fun onDebugKernelLogChanged(enabled: Boolean) {
@@ -1062,6 +1113,12 @@ class GhostlockViewModel(
 
     fun onDialogDismiss() = dismissDialog()
 
+    /** "Export log & report" from the failed-run notice: dismiss, then the picker. */
+    fun onDialogExportLog() {
+        dismissDialog()
+        onExportRunLog()
+    }
+
     fun onDialogDismissFinished() {
         if (!state.value.dialogVisible) {
             clearDialog()
@@ -1496,6 +1553,7 @@ class GhostlockViewModel(
                 dialogItems = emptyList(),
                 dialogItemResIds = emptyList(),
                 dialogCurrentItemIndex = -1,
+                dialogExportLog = false,
                 dialogInput = "",
                 dialogConfirmLabelRes = R.string.parse_start,
                 dialogDocUrl = null,

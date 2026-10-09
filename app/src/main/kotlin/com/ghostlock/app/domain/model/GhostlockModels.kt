@@ -48,11 +48,36 @@ data class ExecutionFieldValue(
     val overridden: Boolean,
 )
 
-/** Debug-only export preferences shown by the hidden debug screen. */
+/** Debug-only preferences shown by the hidden debug screen. */
 data class DebugSettings(
     val exportEnabled: Boolean = true,
-    val exportLocation: String = "Download/ghostlock-debug-log",
     val kernelLogEnabled: Boolean = true,
+)
+
+/** How a retained run ended; [INTERRUPTED] is decided at the next app start. */
+enum class RunLogState(val token: String) {
+    RUNNING("running"),
+    COMPLETED("completed"),
+    FAILED("failed"),
+    INTERRUPTED("interrupted"),
+    ;
+
+    companion object {
+        /** An unknown token reads as [INTERRUPTED]: it did not record a clean end. */
+        fun fromToken(token: String): RunLogState =
+            entries.firstOrNull { it.token == token } ?: INTERRUPTED
+    }
+}
+
+/**
+ * One retained run, as the export picker lists it. [entry] is the launch path
+ * (`direct` or `shizuku`), [bytes] the run's footprint on the device.
+ */
+data class RunLogEntry(
+    val stamp: String,
+    val entry: String,
+    val state: RunLogState,
+    val bytes: Long,
 )
 
 /** One node of the resolved profile tree: a JSON group or a numeric leaf. */

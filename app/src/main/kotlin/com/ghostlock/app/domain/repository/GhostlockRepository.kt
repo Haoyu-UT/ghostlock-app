@@ -7,6 +7,7 @@ import com.ghostlock.app.domain.model.OffsetCandidate
 import com.ghostlock.app.domain.model.OffsetImportResult
 import com.ghostlock.app.domain.model.ParseResult
 import com.ghostlock.app.domain.model.ProfileConfig
+import com.ghostlock.app.domain.model.RunLogEntry
 import com.ghostlock.app.domain.model.UserProfileFile
 
 interface GhostlockRepository {
@@ -115,9 +116,21 @@ interface GhostlockRepository {
 
     fun setDebugExportEnabled(enabled: Boolean)
 
-    fun setDebugExportLocation(location: String)
-
     fun setDebugKernelLogEnabled(enabled: Boolean)
+
+    /** Runs retained on the device, newest first, an unfinished one ahead of the rest. */
+    suspend fun listRunLogs(): List<RunLogEntry>
+
+    /** Streams one retained run into a document the user picked; false if it failed. */
+    suspend fun exportRunLog(stamp: String, documentUri: String): Boolean
+
+    suspend fun clearRunLogs()
+
+    /**
+     * Marks every run still recorded as running when the app starts: it was
+     * killed with the device. Returns how many. See `RunLogStore`.
+     */
+    suspend fun markInterruptedRunLogs(): Int
 
     suspend fun runExploit(pair: CpuPair, onLog: (String) -> Unit): Int
 

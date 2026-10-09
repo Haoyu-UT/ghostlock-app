@@ -18,6 +18,8 @@ import com.ghostlock.app.data.ota.OtaPayloadExtractor
 import com.ghostlock.app.domain.model.OffsetImportResult
 import com.ghostlock.app.domain.model.ParseResult
 import com.ghostlock.app.domain.model.ProfileConfig
+import com.ghostlock.app.domain.model.RunLogEntry
+import com.ghostlock.app.domain.model.RunLogState
 import com.ghostlock.app.domain.model.UserProfileFile
 import com.ghostlock.app.domain.repository.GhostlockRepository
 import com.ghostlock.app.domain.repository.ProfileConfigController
@@ -44,13 +46,11 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
         const val UserProfilesDirectoryName = "user_profiles"
         const val EditSessionPreferences = "ghostlock_edit_session"
         const val ExtractBinaryName = "libextract.so"
-        const val DefaultDebugLocation = "Download/ghostlock-debug-log"
         const val PrefForceAttackTest = "force_attack_test"
 
         /** Build identity the layer-disable notice was last shown for. */
         const val PrefLayerNoticeAck = "profile_layer_notice_ack"
         const val PrefDebugExportEnabled = "debug_export_enabled"
-        const val PrefDebugExportLocation = "debug_export_location"
         const val PrefDebugKernelLogEnabled = "debug_kernel_log_enabled"
         const val PrefDebugProfileOverrides = "debug_profile_overrides"
 
@@ -222,7 +222,6 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
     /* debug-ui: preferences for the hidden debug screen. */
     override suspend fun debugSettings(): DebugSettings = DebugSettings(
         exportEnabled = preferences.getBoolean(PrefDebugExportEnabled, true),
-        exportLocation = normalizeDebugLocation(preferences.getString(PrefDebugExportLocation, null)),
         kernelLogEnabled = preferences.getBoolean(PrefDebugKernelLogEnabled, true),
     )
 
@@ -230,21 +229,27 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
         preferences.edit { putBoolean(PrefDebugExportEnabled, enabled) }
     }
 
-    override fun setDebugExportLocation(location: String) {
-        preferences.edit { putString(PrefDebugExportLocation, normalizeDebugLocation(location)) }
-    }
-
     override fun setDebugKernelLogEnabled(enabled: Boolean) {
         preferences.edit { putBoolean(PrefDebugKernelLogEnabled, enabled) }
     }
 
-    private fun normalizeDebugLocation(value: String?): String {
-        val cleaned = value.orEmpty().trim().trim('/').replace(Regex("/{2,}"), "/")
-        val safe = cleaned.takeIf { candidate ->
-            candidate.isNotEmpty() && candidate.split('/').none { it == ".." || it == "." }
-        }
-        return safe ?: DefaultDebugLocation
+    override suspend fun listRunLogs(): List<RunLogEntry> = withContext(Dispatchers.IO) {
+        RunLogStore.list(appContext)
     }
+
+    override suspend fun exportRunLog(stamp: String, documentUri: String): Boolean =
+        withContext(Dispatchers.IO) {
+            RunLogStore.exportZip(appContext, stamp, documentUri.toUri())
+        }
+
+    override suspend fun clearRunLogs() = withContext(Dispatchers.IO) {
+        RunLogStore.clear(appContext)
+    }
+
+    override suspend fun markInterruptedRunLogs(): Int = withContext(Dispatchers.IO) {
+        RunLogStore.markInterrupted(appContext)
+    }
+
 
     /* Profile configuration now lives in AndroidProfileConfigController: the
      * repository only wires it and forwards the native document. */
@@ -528,9 +533,9 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
     ): Int {
         val settings = debugSettings()
         if (!settings.exportEnabled) return run(onLog, null) { _, _ -> false }
-        val archive = DebugAttackLog.open(appContext, entry, settings.exportLocation)
+        val archive = DebugAttackLog.open(appContext, entry)
         if (archive == null) {
-            onLog("<k> warning: cannot create ${settings.exportLocation} debug log")
+            onLog("<k> warning: cannot create the run log")
             return run(onLog, null) { _, _ -> false }
         }
         val archivedLog: (String) -> Unit = { line ->
@@ -546,13 +551,20 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
                 "<k> GhostLock ${BuildConfig.VERSION_NAME}+${BuildConfig.VERSION_CODE} " +
                     "build ${BuildInfo.BUILD_TIME_LABEL}",
             )
-            archivedLog("<k> debug log: ${archive.folderPath}/${archive.displayName}")
+            archivedLog(
+                "<k> run log: ${archive.displayName} (retained on the device; " +
+                    "export it from the log screen)",
+            )
             archivedLog("<k> debug dump dir: ${archive.folderFile.absolutePath}")
-            run(
+            val code = run(
                 archivedLog,
                 if (settings.kernelLogEnabled) archive.folderFile.absolutePath else null,
                 writeSidecar,
             )
+            /* Recorded before the descriptor closes: a run that ends without a
+             * terminal state reads as interrupted at the next start. */
+            archive.finish(if (code == 0) RunLogState.COMPLETED else RunLogState.FAILED)
+            code
         } finally {
             runCatching { archive.close() }
         }

@@ -219,11 +219,6 @@ internal fun AdvancedScreen(
                             exit = shrinkVertically(),
                         ) {
                             Column {
-                                ArrowPreference(
-                                    title = stringResource(R.string.debug_export_location),
-                                    summary = state.debugExportLocation,
-                                    onClick = actions::onDebugExportLocationPick,
-                                )
                                 SwitchPreference(
                                     checked = state.debugKernelLogEnabled,
                                     onCheckedChange = actions::onDebugKernelLogChanged,

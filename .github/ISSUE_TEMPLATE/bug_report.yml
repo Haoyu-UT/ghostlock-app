@@ -107,15 +107,14 @@ body:
     attributes:
       label: Run log / 运行日志
       description: |
-        Every run is archived automatically. Attach the newest folder under
-        `Download/ghostlock-debug-log/` — on the phone: 文件管理 → 内部存储 → Download → ghostlock-debug-log —
-        zipped is fine. The `profile.conf` / `profile.bin` beside the log matter as much as the log itself:
-        they say which profile was actually in force. The location is configurable under 配置参数 → 保存位置.
+        Runs are kept on the device, not in a folder you browse to. Tap **Export log & report** on the main
+        screen, choose the run (an interrupted one is listed first), and save the zip through the
+        system dialog — attach that zip. It carries the `profile.conf` / `profile.bin` that were
+        actually in force as well as the log.
 
-        每次运行都会自动归档。请附上 `Download/ghostlock-debug-log/` 下最新的那个文件夹
-        （手机上：文件管理 → 内部存储 → Download → ghostlock-debug-log），打包成 zip 即可。
-        日志旁边的 `profile.conf` / `profile.bin` 与日志同样重要：它们记录了实际生效的配置。
-        保存位置可在 配置参数 → 保存位置 中修改。
+        运行日志保存在应用内部，而非文件管理器中的文件夹。请点主界面的 **导出日志**，选择要报告的那一次
+        （中断的那次会排在最前面），用系统对话框保存 zip 并附上。zip 中同时包含当时实际生效的
+        `profile.conf` / `profile.bin`。
 
   - type: textarea
     id: extra
