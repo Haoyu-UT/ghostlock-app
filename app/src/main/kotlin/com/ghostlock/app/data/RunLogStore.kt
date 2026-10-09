@@ -113,14 +113,28 @@ internal object RunLogStore {
             .filter { it.isFile && it.name != MetaName }
             .sortedBy { it.name }
         if (files.isEmpty()) return@runCatching false
+        var written = 0
         ZipOutputStream(BufferedOutputStream(out)).use { zip ->
             for (file in files) {
-                zip.putNextEntry(ZipEntry("${dir.name}/${file.name}"))
-                file.inputStream().use { it.copyTo(zip) }
-                zip.closeEntry()
+                /* One unreadable file must not cost the whole report: the root
+                 * script's dumps land root-owned when it runs (it chmods them,
+                 * but a truncated dump or an older build may not), and half a
+                 * zip is still a report. */
+                val copied = runCatching {
+                    /* Open before declaring the entry: a file that cannot be
+                     * read must be absent from the zip, not present and empty
+                     * -- an empty kernel-dmesg.log reads as "no dump", which is
+                     * a different claim from "the app could not read it". */
+                    file.inputStream().use { input ->
+                        zip.putNextEntry(ZipEntry("${dir.name}/${file.name}"))
+                        input.copyTo(zip)
+                        zip.closeEntry()
+                    }
+                }.isSuccess
+                if (copied) written++
             }
         }
-        true
+        written > 0
     }.getOrDefault(false)
 
     fun clear(context: Context) {

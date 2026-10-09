@@ -95,6 +95,39 @@ class RunLogStoreTest {
     }
 
     @Test
+    fun `an unreadable file is skipped, not fatal to the whole report`() {
+        /* The root script's dumps land root-owned; on a run where it did not
+         * chmod them the app cannot read them. That must cost the dump, not the
+         * log -- the log is the whole point of the export. */
+        val root = root()
+        run(root, "20261009-212803")
+        val locked = File(File(root, "20261009-212803"), "kernel-dmesg.log")
+        locked.writeText("[    0.000000] Booting Linux\n")
+        locked.setReadable(false)
+        if (locked.canRead()) return // running as root: the premise cannot hold
+
+        val bytes = ByteArrayOutputStream()
+        assertTrue(RunLogStore.zip(File(root, "20261009-212803"), bytes))
+
+        val entries = mutableMapOf<String, String>()
+        ZipInputStream(bytes.toByteArray().inputStream()).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                entries[entry.name] = zip.readBytes().toString(Charsets.UTF_8)
+            }
+        }
+        assertTrue(
+            "the log must survive",
+            entries["20261009-212803/${RunLogStore.LogName}"]?.isNotEmpty() == true,
+        )
+        assertFalse(
+            "the unreadable dump is absent, not present-and-empty",
+            entries.keys.any { it.endsWith("kernel-dmesg.log") },
+        )
+        locked.setReadable(true)
+    }
+
+    @Test
     fun `an unknown state reads as interrupted rather than finished`() {
         assertEquals(RunLogState.COMPLETED, RunLogState.fromToken("completed"))
         assertEquals(RunLogState.INTERRUPTED, RunLogState.fromToken(""))

@@ -301,6 +301,13 @@ namespace ghostlock::attack {
             "  done\n"
             "  cp /proc/iomem \"$DEBUG_DIR/iomem.txt\" 2>/dev/null\n"
             "  cp \"$LOG\" \"$DEBUG_DIR/ksu.log\" 2>/dev/null\n"
+            /* The app has to read these back to put them in the exported zip,
+             * and this shell writes them root-only (umask 022, but dmesg and
+             * /proc/iomem land 600/400). The dump directory is the app's own,
+             * so hand the files to it by mode rather than by owner. */
+            "  chmod 644 \"$DEBUG_DIR\"/*.txt \"$DEBUG_DIR\"/*.log 2>/dev/null\n"
+            "  chmod 755 \"$DEBUG_DIR\"/pstore 2>/dev/null\n"
+            "  chmod 644 \"$DEBUG_DIR\"/pstore/* 2>/dev/null\n"
             "  echo \"[*] debug dump written to $DEBUG_DIR\" >>\"$LOG\"\n"
             "}\n"
             "# W1's 64-bit child pointer makes adjacent booleans non-zero.\n"
