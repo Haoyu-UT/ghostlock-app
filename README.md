@@ -2,16 +2,41 @@
 
 > 中文: [README_ZH.md](README_ZH.md)
 
-This is a fork of **[YuKongA/ghostlock-app](https://github.com/YuKongA/ghostlock-app)** carrying a
-port to the **Redmi K50 Ultra** (codename `diting`, SM8475 / Snapdragon 8+ Gen 1), running:
+## Supported devices
 
-```
-5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284
-```
+| Kernel | Devices | Codename | Status |
+|---|---|---|---|
+| `5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284` | Redmi K50 Ultra · Xiaomi 12T Pro | `diting` | **tested end to end** |
 
-Upstream supports 5.15 / 6.1 / 6.6 / 6.12. **5.10 is not among them** — there is no built-in
-profile for it, and 5.10 has no family entry in the offset extractor. This fork adds one, plus the
-fixes that turning it on required.
+The Redmi K50 Ultra is codename `diting` (SM8475 / Snapdragon 8+ Gen 1). **Xiaomi 12T Pro is the
+same physical device** — one codename, three retail names (also sold as the Redmi K50 Extreme
+Edition). It is not a second port.
+
+Reported as possibly sharing the build, but **untested**:
+
+| Retail name | Codename | SoC | vs. the tested device |
+|---|---|---|---|
+| Xiaomi 12S Ultra | `thor` | SM8475 | same SoC |
+| Xiaomi 12 | `cupid` | SM8450 | different SoC |
+| Redmi Note 13 Pro 5G | `garnet` | SM7435 | different SoC |
+| POCO X6 5G | `garnet` | SM7435 | different SoC |
+| POCO F5 | `marble` | SM7475 | different SoC |
+| Redmi Pad Pro | `dizi` / `ruan` | SM7435 | different SoC |
+
+None of these has been run. Only the Xiaomi 12S Ultra is on the same SoC as the tested device; for
+the rest, **a dedicated profile may be required** — a device on a different SoC is not expected to
+ship the same certified kernel build.
+
+This fork also **removes 24 upstream kernels** from the supported list, because its
+compact-waiter change breaks them. The full table, including which devices those 24 covered, is in
+[`docs/kernel_profiles/SUPPORTED_DEVICES.md`](docs/kernel_profiles/SUPPORTED_DEVICES.md).
+
+## About this fork
+
+A fork of **[YuKongA/ghostlock-app](https://github.com/YuKongA/ghostlock-app)**. Upstream supports
+5.15 / 6.1 / 6.6 / 6.12 — **5.10 is not among them**: there is no built-in profile for it, and no
+5.10 family entry in the offset extractor. This fork adds one, plus the fixes that turning it on
+required.
 
 **For the app itself — usage, the offset extractor, the profile schema, the porting guide — read
 [upstream's README](https://github.com/YuKongA/ghostlock-app#readme).** This page only covers what
@@ -19,8 +44,7 @@ the port changed and what it has been shown to do.
 
 ## Status
 
-Verified end-to-end on a **stock, unpatched kernel** — no root beforehand, no instrumentation
-(run `Q4`; see `docs/analysis/`):
+Verified end-to-end on a **stock, unpatched kernel** — no root beforehand, no instrumentation:
 
 | stage | result |
 |---|---|
@@ -50,20 +74,23 @@ Dropping a late-load-capable `ksud` (executable) at **`/data/local/tmp/ksud`** i
 wins the search, and per KernelSU's LKM design that binary carries its own `kernelsu.ko` — no
 separate module file is needed.
 
-### Open regression — read before using this fork for anything but 5.10
+### Open regression — read this before using the fork on anything but a 5.10 device
 
-The fix that makes the compact waiter work on 5.10 rewrote a **shared, unguarded** line in the page
-builder, and `compact_waiter` is a document-global flag covering three different
-`struct rt_mutex_waiter` layouts. The result is that **19 built-in 6.1 profiles and 5 built-in 5.15
-profiles build a waiter whose `prio` reads 0 (highest) on their kernels.**
+**This fork breaks 24 of upstream's built-in profiles.** It is a defect in the fork, not in
+GhostLock — upstream supports those devices normally, and nothing here affects it.
 
-- 5.10 has `int prio` at `0x40` as plain padding-free layout
-- 5.15 / 6.1 have `unsigned int wake_state` at `0x40` and `int prio` at `0x44`
+The change that makes the compact waiter work on 5.10 sits on a code path shared with every kernel
+family, so the **19 built-in 6.1 profiles and 5 built-in 5.15 profiles** now build a waiter whose
+priority is written to the wrong field. The families disagree on the waiter layout — 5.10 has
+`int prio` at `0x40`, while 5.15 and 6.1 have `unsigned int wake_state` at `0x40` and `int prio` at
+`0x44` — and the fork writes the 5.10 pair unconditionally.
 
-6.6 / 6.12 are unaffected (they set no `compact_waiter`). The full analysis, blast radius, and the
-planned fix are in
+6.6 and 6.12 are unaffected, as they don't use the compact waiter. The devices those 24 kernels
+covered are listed in
+[`docs/kernel_profiles/SUPPORTED_DEVICES.md`](docs/kernel_profiles/SUPPORTED_DEVICES.md), and the
+analysis with the planned fix is in
 [`docs/analysis/waiter-layout-family-gating-plan.md`](docs/analysis/waiter-layout-family-gating-plan.md).
-**Do not build this branch for a 5.15 or 6.1 device until that is fixed.**
+**Do not build this fork for a 5.15 or 6.1 device until that is fixed.**
 
 ## What the port changed
 
@@ -107,13 +134,13 @@ The profile is **not** a built-in asset; it is imported as a user document.
    `WRITE_SECURE_SETTINGS`, so `adb shell` cannot set it.
 4. Run.
 
-The port's own profile, with every value annotated with how it was derived and verified, is kept
-outside this repository along with the evidence trail (app logs, kernel traces, oops texts).
+A profile is specific to one exact kernel build, so extract one for your own device as above rather
+than reusing a file from here — the values differ per build, and a mismatch fails at W1.
 
 ## Layout
 
-- [`docs/analysis/`](docs/analysis/) — plan documents: the payload page, the waiter lifetime, the
-  zero-write descent, and the waiter-layout regression above.
+- [`docs/analysis/`](docs/analysis/) — design notes and analysis behind this port, including the
+  regression described above.
 - [`docs/kernel_profiles/`](docs/kernel_profiles/) — upstream's porting guide and profile schema,
   unchanged.
 

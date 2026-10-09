@@ -2,15 +2,38 @@
 
 > English: [README.md](README.md)
 
-本仓库是 **[YuKongA/ghostlock-app](https://github.com/YuKongA/ghostlock-app)** 的 fork，
-移植目标是 **Redmi K50 Ultra**（代号 `diting`，SM8475 / 骁龙 8+ Gen 1），运行内核：
+## 支持的设备
 
-```
-5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284
-```
+| Kernel | 机型 | 代号 | 状态 |
+|---|---|---|---|
+| `5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284` | Redmi K50 Ultra · Xiaomi 12T Pro | `diting` | **已端到端验证** |
 
-上游支持 5.15 / 6.1 / 6.6 / 6.12。**5.10 不在其中**——既没有内置配置，偏移提取器也没有
-5.10 的族条目。本 fork 补上了这一款，以及让它跑通所必需的几处修复。
+Redmi K50 Ultra 的代号是 `diting`（SM8475 / 骁龙 8+ Gen 1）。**Xiaomi 12T Pro 是同一台设备**——
+同一个代号，三个零售名（也称 Redmi K50 至尊版）。它不是第二个移植。
+
+据称可能共用同一构建、但**未经验证**的机型：
+
+| 机型 | 代号 | SoC | 与已验证机型相比 |
+|---|---|---|---|
+| Xiaomi 12S Ultra | `thor` | SM8475 | 同 SoC |
+| Xiaomi 12 | `cupid` | SM8450 | SoC 不同 |
+| Redmi Note 13 Pro 5G | `garnet` | SM7435 | SoC 不同 |
+| POCO X6 5G | `garnet` | SM7435 | SoC 不同 |
+| POCO F5 | `marble` | SM7475 | SoC 不同 |
+| Redmi Pad Pro | `dizi` / `ruan` | SM7435 | SoC 不同 |
+
+均未实际运行过。其中只有 Xiaomi 12S Ultra 与已验证机型同 SoC；其余机型**可能需要单独的
+profile**——SoC 不同，预计不会搭载同一份经过认证的内核构建。
+
+本 fork 还从支持列表中**移除了 24 个上游内核**，因为本 fork 的 compact waiter 改动会破坏它们。
+完整表格（含这 24 个内核覆盖哪些机型）见
+[`docs/kernel_profiles/SUPPORTED_DEVICES_ZH.md`](docs/kernel_profiles/SUPPORTED_DEVICES_ZH.md)。
+
+## 关于本 fork
+
+本仓库是 **[YuKongA/ghostlock-app](https://github.com/YuKongA/ghostlock-app)** 的 fork。
+上游支持 5.15 / 6.1 / 6.6 / 6.12——**5.10 不在其中**：既没有内置配置，偏移提取器也没有 5.10 的
+族条目。本 fork 补上了这一款，以及让它跑通所必需的几处修复。
 
 **关于 App 本身——使用方法、偏移提取器、配置 schema、移植指南——请阅读
 [上游 README](https://github.com/YuKongA/ghostlock-app/blob/main/README_ZH.md)。**
@@ -18,8 +41,7 @@
 
 ## 当前状态
 
-已在**原厂、未打补丁的内核**上端到端验证通过——事先无 root，无任何插桩（run `Q4`，
-详见 `docs/analysis/`）：
+已在**原厂、未打补丁的内核**上端到端验证通过——事先无 root，无任何插桩：
 
 | 阶段 | 结果 |
 |---|---|
@@ -46,19 +68,21 @@ root 是**临时的**。KernelSU 由漏洞利用现场 late-load，因此重启�
 把一个**支持 late-load 的 `ksud`**（可执行文件）放到 **`/data/local/tmp/ksud`** 即可解决：
 它会赢得搜索顺序，且按 KernelSU 的 LKM 设计，该二进制内部自带 `kernelsu.ko`，无需另放模块文件。
 
-### 未修复的回归——除 5.10 之外的机型请先读这一段
+### 未修复的回归——除 5.10 机型外，使用本 fork 前请先读这一段
 
-让 compact waiter 在 5.10 上工作的那处修复，改写了页面构造器中**一行被共享且未加保护**的代码；
-而 `compact_waiter` 是一个文档级全局开关，覆盖了三种不同的 `struct rt_mutex_waiter` 布局。
-结果是：**19 个内置 6.1 配置与 5 个内置 5.15 配置，会在各自内核上构造出 `prio` 读作 0（最高优先级）
-的 waiter。**
+**本 fork 破坏了上游 24 个内置配置。** 这是本 fork 自身的缺陷，而非 GhostLock 的问题——上游对这些
+机型的支持一切正常，本仓库不会影响上游。
 
-- 5.10：`int prio` 位于 `0x40`，其后无字段填充
-- 5.15 / 6.1：`unsigned int wake_state` 位于 `0x40`，`int prio` 位于 `0x44`
+让 compact waiter 在 5.10 上工作的那处改动，位于与所有内核族共用的代码路径上，因此**19 个内置
+6.1 配置与 5 个内置 5.15 配置**现在会把 waiter 的优先级写进错误的字段。各内核对 waiter 布局的定义
+并不一致——5.10 的 `int prio` 位于 `0x40`，而 5.15 与 6.1 的 `unsigned int wake_state` 位于 `0x40`、
+`int prio` 位于 `0x44`——而本 fork 无条件地按 5.10 的写法写入。
 
-6.6 / 6.12 不受影响（它们不设置 `compact_waiter`）。完整分析、影响范围与修复方案见
+6.6 与 6.12 不受影响（它们不使用 compact waiter）。这 24 个内核所覆盖的机型见
+[`docs/kernel_profiles/SUPPORTED_DEVICES_ZH.md`](docs/kernel_profiles/SUPPORTED_DEVICES_ZH.md)，
+完整分析与修复方案见
 [`docs/analysis/waiter-layout-family-gating-plan.md`](docs/analysis/waiter-layout-family-gating-plan.md)。
-**在该问题修复之前，请勿用本分支为 5.15 或 6.1 设备构建。**
+**在该问题修复之前，请勿用本 fork 为 5.15 或 6.1 设备构建。**
 
 ## 移植改动了什么
 
@@ -98,13 +122,12 @@ waiter —— 10 字布局
    其现象与漏洞利用失败无法区分。该设置需要 `WRITE_SECURE_SETTINGS`，`adb shell` 无法写入。
 4. 运行。
 
-本移植所用的配置文件（每个取值都标注了推导与验证方式）与证据链（App 日志、内核 trace、
-oops 文本）保存在本仓库之外。
+profile 与具体的内核构建一一对应，请按上述步骤为自己的设备提取，而不要直接复用它人的文件——
+各构建的取值并不相同，不匹配会在 W1 阶段失败。
 
 ## 目录
 
-- [`docs/analysis/`](docs/analysis/) —— 计划文档：payload page、waiter 生命周期、零值写入的
-  descent，以及上文所述的 waiter 布局回归。
+- [`docs/analysis/`](docs/analysis/) —— 本移植的设计笔记与分析，包括上文所述的回归问题。
 - [`docs/kernel_profiles/`](docs/kernel_profiles/) —— 上游的移植指南与配置 schema，未改动。
 
 ## 致谢与许可
