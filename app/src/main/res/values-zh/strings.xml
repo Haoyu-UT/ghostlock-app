@@ -108,8 +108,6 @@
     <string name="dialog_dismiss">关闭</string>
     <string name="dialog_open_guide">查看指南</string>
     <string name="execution_save_failed">无法保存执行参数覆盖</string>
-    <string name="debug_export_log">导出 Debug 日志到文件</string>
-    <string name="debug_export_log_summary">把攻击日志与 dump 写入存储</string>
     <string name="debug_build_hint">使用 debug 构建可获得更详细日志输出</string>
     <string name="debug_kernel_log">导出内核日志</string>
     <string name="debug_kernel_log_summary">将 dmesg 与 pstore 保存到攻击日志目录</string>

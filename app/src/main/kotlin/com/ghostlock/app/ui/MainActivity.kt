@@ -204,7 +204,6 @@ private fun GhostlockRoute(
             override fun onCloseAdvanced() = viewModel.onCloseAdvanced()
             override fun onShowAbout() = viewModel.onShowAbout()
             override fun onCloseAbout() = viewModel.onCloseAbout()
-            override fun onDebugExportChanged(enabled: Boolean) = viewModel.onDebugExportChanged(enabled)
             override fun onDialogExportLog() = viewModel.onDialogExportLog()
             override fun onExportRunLog() = viewModel.onExportRunLog()
             override fun onRunLogSelected(stamp: String) = viewModel.onRunLogSelected(stamp)

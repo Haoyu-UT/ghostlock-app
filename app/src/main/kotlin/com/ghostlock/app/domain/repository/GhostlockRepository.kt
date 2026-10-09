@@ -114,8 +114,6 @@ interface GhostlockRepository {
 
     suspend fun debugSettings(): DebugSettings
 
-    fun setDebugExportEnabled(enabled: Boolean)
-
     fun setDebugKernelLogEnabled(enabled: Boolean)
 
     /** Runs retained on the device, newest first, an unfinished one ahead of the rest. */

@@ -149,7 +149,6 @@ data class GhostlockUiState(
     val executionFields: List<ExecutionFieldValue> = emptyList(),
     val executionEditing: Map<String, String> = emptyMap(),
     val advancedScreenVisible: Boolean = false,
-    val debugExportEnabled: Boolean = true,
     val debugKernelLogEnabled: Boolean = true,
     val aboutVisible: Boolean = false,
     val parametersVisible: Boolean = false,
@@ -246,7 +245,6 @@ interface GhostlockActions {
     fun onCloseAdvanced()
     fun onShowAbout()
     fun onCloseAbout()
-    fun onDebugExportChanged(enabled: Boolean)
     fun onDebugKernelLogChanged(enabled: Boolean)
     fun onOpenParameters()
     fun onCloseParameters()

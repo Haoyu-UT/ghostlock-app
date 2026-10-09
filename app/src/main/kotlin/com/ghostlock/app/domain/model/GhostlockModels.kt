@@ -48,9 +48,12 @@ data class ExecutionFieldValue(
     val overridden: Boolean,
 )
 
-/** Debug-only preferences shown by the hidden debug screen. */
+/**
+ * Debug-only preferences shown by the hidden debug screen. The run log itself is
+ * not among them: it is always kept, because the run that needs reporting is the
+ * one that failed.
+ */
 data class DebugSettings(
-    val exportEnabled: Boolean = true,
     val kernelLogEnabled: Boolean = true,
 )
 

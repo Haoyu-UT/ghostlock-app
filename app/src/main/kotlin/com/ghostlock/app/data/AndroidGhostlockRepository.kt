@@ -50,7 +50,6 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
 
         /** Build identity the layer-disable notice was last shown for. */
         const val PrefLayerNoticeAck = "profile_layer_notice_ack"
-        const val PrefDebugExportEnabled = "debug_export_enabled"
         const val PrefDebugKernelLogEnabled = "debug_kernel_log_enabled"
         const val PrefDebugProfileOverrides = "debug_profile_overrides"
 
@@ -221,13 +220,8 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
 
     /* debug-ui: preferences for the hidden debug screen. */
     override suspend fun debugSettings(): DebugSettings = DebugSettings(
-        exportEnabled = preferences.getBoolean(PrefDebugExportEnabled, true),
         kernelLogEnabled = preferences.getBoolean(PrefDebugKernelLogEnabled, true),
     )
-
-    override fun setDebugExportEnabled(enabled: Boolean) {
-        preferences.edit { putBoolean(PrefDebugExportEnabled, enabled) }
-    }
 
     override fun setDebugKernelLogEnabled(enabled: Boolean) {
         preferences.edit { putBoolean(PrefDebugKernelLogEnabled, enabled) }
@@ -532,7 +526,8 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
         run: suspend ((String) -> Unit, String?, (String, ByteArray) -> Boolean) -> Int,
     ): Int {
         val settings = debugSettings()
-        if (!settings.exportEnabled) return run(onLog, null) { _, _ -> false }
+        /* Unconditional: a run with no log is a run nobody can report, and the
+         * user who most needs one is the one whose device just died. */
         val archive = DebugAttackLog.open(appContext, entry)
         if (archive == null) {
             onLog("<k> warning: cannot create the run log")

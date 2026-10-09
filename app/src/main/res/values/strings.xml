@@ -108,8 +108,6 @@
     <string name="dialog_dismiss">Dismiss</string>
     <string name="dialog_open_guide">Open guide</string>
     <string name="execution_save_failed">Could not save execution overrides</string>
-    <string name="debug_export_log">Export debug log to file</string>
-    <string name="debug_export_log_summary">Write the attack log and dumps to storage</string>
     <string name="debug_build_hint">Use a debug build for more detailed log output</string>
     <string name="debug_kernel_log">Export kernel log</string>
     <string name="debug_kernel_log_summary">Save dmesg and pstore with the attack log</string>

@@ -207,26 +207,15 @@ internal fun AdvancedScreen(
             item(key = "export") {
                 Card {
                     Column {
+                        /* The run log itself has no switch any more: it is always
+                         * kept. This one still gates the kernel side, which the
+                         * root script only writes from its exit trap. */
                         SwitchPreference(
-                            checked = state.debugExportEnabled,
-                            onCheckedChange = actions::onDebugExportChanged,
-                            title = stringResource(R.string.debug_export_log),
-                            summary = stringResource(R.string.debug_export_log_summary),
+                            checked = state.debugKernelLogEnabled,
+                            onCheckedChange = actions::onDebugKernelLogChanged,
+                            title = stringResource(R.string.debug_kernel_log),
+                            summary = stringResource(R.string.debug_kernel_log_summary),
                         )
-                        AnimatedVisibility(
-                            visible = state.debugExportEnabled,
-                            enter = expandVertically(),
-                            exit = shrinkVertically(),
-                        ) {
-                            Column {
-                                SwitchPreference(
-                                    checked = state.debugKernelLogEnabled,
-                                    onCheckedChange = actions::onDebugKernelLogChanged,
-                                    title = stringResource(R.string.debug_kernel_log),
-                                    summary = stringResource(R.string.debug_kernel_log_summary),
-                                )
-                            }
-                        }
                         if (!BuildConfig.DEBUG) {
                             Text(
                                 text = stringResource(R.string.debug_build_hint),

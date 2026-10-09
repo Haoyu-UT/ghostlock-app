@@ -277,7 +277,6 @@ class GhostlockViewModel(
             val settings = repository.debugSettings()
             mutableState.update {
                 it.copy(
-                    debugExportEnabled = settings.exportEnabled,
                     debugKernelLogEnabled = settings.kernelLogEnabled,
                 )
             }
@@ -498,11 +497,6 @@ class GhostlockViewModel(
 
     fun onCloseAbout() {
         mutableState.update { it.copy(aboutVisible = false) }
-    }
-
-    fun onDebugExportChanged(enabled: Boolean) {
-        repository.setDebugExportEnabled(enabled)
-        mutableState.update { it.copy(debugExportEnabled = enabled) }
     }
 
     private var pendingRunLogStamp: String? = null
