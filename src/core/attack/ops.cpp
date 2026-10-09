@@ -329,7 +329,18 @@ namespace ghostlock::attack {
             "  echo \"[*] safe mode: $n module(s) disabled\" >>\"$LOG\"\n"
             "fi\n"
             "# step 1: restore policy\n"
-            "POLICY=$(mktemp \"$HOME_DIR/.ghostlock_policy.XXXXXX\") || {\n"
+            /* The dump is a *working copy* -- patched in place, then handed to
+             * load_policy -- never evidence, and nothing reads it afterwards.
+             * It lives in the run's debug folder when the app asked for one, so
+             * a run killed before its exit trap leaves it beside that run's
+             * other dumps instead of growing app-private storage for ever;
+             * /data/local/tmp (and then the app's own dir) are the fallbacks
+             * for a run started without a debug folder. */
+            "POLICY_DIR=\"${DEBUG_DIR:-/data/local/tmp}\"\n"
+            "mkdir -p \"$POLICY_DIR\" 2>/dev/null\n"
+            "[ -d \"$POLICY_DIR\" ] || POLICY_DIR=\"$HOME_DIR\"\n"
+            "POLICY=\"$POLICY_DIR/ghostlock-selinux.policy\"\n"
+            "printf '' >\"$POLICY\" 2>/dev/null || {\n"
             "  echo '[!] cannot create policy dump' >>\"$LOG\"\n"
             "  exit 1\n"
             "}\n"
@@ -375,6 +386,13 @@ namespace ghostlock::attack {
             "  sleep 2\n"
             "done\n"
             "echo \"[*] policy fixup rc=$FIXUP_RC\" >>\"$LOG\"\n"
+            /* The working copy is spent once the policy loaded: delete it here,
+             * not only in the EXIT trap. Measured 2026-10-09: the trap runs in
+             * only ~12 of 182 runs -- this shell is normally killed rather than
+             * exited, so a trap-only delete leaks the 2 MB dump into the run's
+             * debug folder on every run. A failed fixup keeps the file, which
+             * is why it is worth having next to that run's other dumps. */
+            "if [ \"$FIXUP_RC\" -eq 0 ]; then rm -f \"$POLICY\"; fi\n"
             "if [ \"$FIXUP_RC\" -eq 0 ]; then\n"
             "# load_policy ok: late-load (module init re-enforces); already-loaded restores below\n"
             "if grep -q kernelsu /proc/modules 2>/dev/null; then\n"

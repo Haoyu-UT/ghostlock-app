@@ -132,7 +132,15 @@ EOF one dance before its write landed.
 
 ## Reproducing
 
-The profile is **not** a built-in asset; it is imported as a user document.
+The diting profile ships as a **built-in asset**, so a device on that exact kernel needs no import
+and no setup. Two layers used to outrank a built-in profile and no longer do: an imported document
+is **not applied** while a bundled profile covers your kernel, and parameter overrides apply **only
+when the installed build wrote them**. Both stay stored — the app raises a one-time *"Disabled by
+this update"* notice saying what is off and why, keeps a banner on the profile screen, and re-saving
+an override from Parameters re-enables it immediately. See `PORT-PLAN.md` Phase 8 in the project
+notes for the full rule.
+
+To port a *different* build, extract your own profile and then bundle or import it:
 
 1. Extract on a host (`--iomem /dev/null` — the tool otherwise reads the *build host's*
    `/proc/iomem` and silently produces a plausible wrong `kernel_phys_load`):
@@ -141,13 +149,12 @@ The profile is **not** a built-in asset; it is imported as a user document.
    ghostlock-extract boot.img --iomem /dev/null --phys 0xa8000000 --format conf --out profile.conf
    ```
 
-2. Import it in the app: **配置参数 → 导入 offsets.conf（v2）**. An imported user document takes
-   precedence over the built-ins.
-3. Set `settings_enable_monitor_phantom_procs = false` from a root shell. Android's phantom-process
-   trimmer otherwise SIGKILLs the native binary mid-run (the 272 spray children blow past the
-   platform cap), which is indistinguishable from an exploit failure. This needs
-   `WRITE_SECURE_SETTINGS`, so `adb shell` cannot set it.
-4. Run.
+2. Either add it under `app/src/main/assets/kernel_profiles/` and register it in `index.conf` (then
+   it is the authoritative layer for that kernel), or import it as a user document on a kernel that
+   has no bundled profile.
+3. Run. The phantom-process trimmer does **not** need to be disabled — that advice is obsolete:
+   runs were measured to complete with it at its default, and it cannot be turned off before the
+   first successful run anyway, since it needs root.
 
 A profile is specific to one exact kernel build, so extract one for your own device as above rather
 than reusing a file from here — the values differ per build, and a mismatch fails at W1.

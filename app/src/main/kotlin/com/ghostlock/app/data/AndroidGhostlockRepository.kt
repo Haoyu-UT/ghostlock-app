@@ -46,6 +46,9 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
         const val ExtractBinaryName = "libextract.so"
         const val DefaultDebugLocation = "Download/ghostlock-debug-log"
         const val PrefForceAttackTest = "force_attack_test"
+
+        /** Build identity the layer-disable notice was last shown for. */
+        const val PrefLayerNoticeAck = "profile_layer_notice_ack"
         const val PrefDebugExportEnabled = "debug_export_enabled"
         const val PrefDebugExportLocation = "debug_export_location"
         const val PrefDebugKernelLogEnabled = "debug_kernel_log_enabled"
@@ -145,7 +148,13 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
         val all = runCatching { HoconSupport.parseValue(raw ?: "") }
             .getOrNull().asValueMap() ?: valueMapOf()
         deepMergeValues(all.mutableChild(release), overrides)
-        preferences.edit { putString(PrefDebugProfileOverrides, HoconSupport.render(all)) }
+        preferences.edit {
+            putString(PrefDebugProfileOverrides, HoconSupport.render(all))
+            /* The migration is this build writing them, so they apply (§B.7);
+             * leaving them unstamped would silently disable a user's own
+             * offsets on the very update that carried them over. */
+            putString(AndroidProfileConfigController.PrefOverridesBuildSha, BuildConfig.BUILD_IDENTITY)
+        }
     }
 
     override suspend fun snapshot(): KernelSnapshot {
@@ -188,6 +197,13 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
     override fun setForceAttackTest(enabled: Boolean) {
         forceAttackTest = enabled
         preferences.edit { putBoolean(PrefForceAttackTest, enabled) }
+    }
+
+    override fun layerNoticeAcknowledged(): String? =
+        preferences.getString(PrefLayerNoticeAck, null)?.takeIf { it.isNotEmpty() }
+
+    override fun acknowledgeLayerNotice(build: String) {
+        preferences.edit { putString(PrefLayerNoticeAck, build) }
     }
 
     override fun setShizukuEnabled(enabled: Boolean) {
@@ -407,6 +423,7 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
                 "<s> profile resolved hasProfile=${config.hasProfile} " +
                     "blob=${profileBlob?.size ?: 0} invalid=${config.invalidPaths.size}",
             )
+            logProfileLayers(archivedLog, config)
             when {
                 !config.hasProfile || profileBlob == null -> {
                     archivedLog("<s> error: profile is unavailable for $release")
@@ -429,6 +446,7 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
                     } else {
                         profileBlob
                     }
+                    logProfileDigest(archivedLog, runtimeBlob)
                     dumpRuntimeProfile(archivedLog, writeSidecar, release, pair, runtimeBlob)
                     archivedLog("<b> starting UserService")
                     resetRunState()
@@ -541,6 +559,51 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
     }
 
     /**
+     * States which profile layers this run used and which were skipped, and why
+     * (PORT-PLAN Phase 8 §C.10-11). A skipped layer is the difference between
+     * "the port is broken" and "what you imported is not being applied", which
+     * is exactly the distinction a log has to make from someone else's phone.
+     */
+    private fun logProfileLayers(log: (String) -> Unit, config: ProfileConfig) {
+        val layers = config.layers ?: return
+        log("<k> profile layers: ${layers.describe()}")
+        if (layers.overridesPresent && !layers.overridesApplied) {
+            log(
+                "<k> profile: stored overrides are present but disabled " +
+                    "(written by build ${layers.overridesBuild ?: "unknown"}); " +
+                    "re-save them in Parameters to re-enable",
+            )
+        }
+        if (layers.imported != null && !layers.importedApplied) {
+            log(
+                "<k> profile: imported document ${layers.imported} is loaded but not " +
+                    "applied; this kernel has a bundled profile",
+            )
+        }
+        if (layers.uncarriedKeys.isNotEmpty()) {
+            log(
+                "<k> warning: profile carries keys no wire section declares: " +
+                    layers.uncarriedKeys.joinToString(),
+            )
+        }
+    }
+
+    /**
+     * The digest the app just put in the blob native receives (§E.18); native
+     * recomputes and logs its own, and refuses the run on a mismatch.
+     */
+    private fun logProfileDigest(log: (String) -> Unit, blob: ByteArray) {
+        val digest = NativeProfileDocument.digestOf(blob)
+        log(
+            if (digest == null) {
+                "<k> profile digest: absent"
+            } else {
+                "<k> profile digest=0x%016x".format(digest.toLong())
+            },
+        )
+    }
+
+    /**
      * Writes the effective runtime profile into the attempt folder: the resolved
      * HOCON (`profile.conf`) and the exact GLK1 v2 bytes handed to native
      * (`profile.bin`). No-op when debug export is disabled.
@@ -590,6 +653,7 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
                 "<k> profile: hasProfile=${config.hasProfile} " +
                     "invalid=${config.invalidPaths.size} release=$release",
             )
+            logProfileLayers(onLog, config)
             if (!config.hasProfile) {
                 error(
                     "no profile matched $release; import its .conf and select it, " +
@@ -609,6 +673,7 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
             if (safeModeEnabled) {
                 profileBlob = NativeProfileDocument.patchSafeMode(profileBlob) ?: profileBlob
             }
+            logProfileDigest(onLog, profileBlob)
             dumpRuntimeProfile(onLog, writeSidecar, release, pair, profileBlob)
             val ksuOffset = AtomicLong()
             val nativeOffset = AtomicLong()
@@ -654,6 +719,13 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
                     environment()["TMPDIR"] = workDir.absolutePath
                     environment()["HOME"] = workDir.absolutePath
                     environment()["GHOSTLOCK_KSU_LOG"] = ksuLog.absolutePath
+                    /* Only when it is provable: a missing anchor state file is
+                     * then known to mean "no run since the reboot" instead of
+                     * "cannot tell", which is what let a clean install never
+                     * run at all. See InstallClock. */
+                    if (InstallClock.installPredatesBoot(appContext)) {
+                        environment()["GHOSTLOCK_ANCHOR_TRUSTED"] = "1"
+                    }
                 }
             onLog("<b> starting native: ${binary.absolutePath}")
             resetRunState()
@@ -773,6 +845,12 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
                             AndroidProfileConfigController.PrefDebugProfileOverrides,
                             HoconSupport.render(valueMapOf(deviceRelease to overrides)),
                         )
+                        /* The session inherits the writer's identity too: without
+                         * it the layer would read as disabled inside the editor
+                         * and the user's own values would be shown as defaults. */
+                        profileController.overridesBuildStamp()?.let { stamp ->
+                            putString(AndroidProfileConfigController.PrefOverridesBuildSha, stamp)
+                        }
                     }
                 }
             }

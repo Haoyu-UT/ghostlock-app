@@ -85,6 +85,9 @@ class GhostlockViewModel(
     private var parseDialogStage = ParseDialogStage.Mode
     private var pendingConfirmation: PendingConfirmation? = null
 
+    /** The layer notice is decided once per process, from the first resolution. */
+    private var layerNoticeChecked = false
+
     fun initialize() {
         if (initialized) return
         initialized = true
@@ -168,7 +171,34 @@ class GhostlockViewModel(
                 profileFallback = config.fallbackTo,
                 activeBuiltinProfile = profileController.activeBuiltinRelease(),
                 activeUserProfile = profileController.activeUserProfile(),
+                profileLayers = config.layers,
                 customCpuPair = customCpuPairOf(config),
+            )
+        }
+        if (!preserveEditing) maybeRaiseLayerNotice(config)
+    }
+
+    /**
+     * The layers this config reports are the ones a run would use right now: the
+     * notice is driven by the resolution itself, never by a predicate the UI
+     * recomputes, so what it says has already happened (§C.12b). Once per build
+     * identity — the point is to tell the user what the update did, not to nag.
+     */
+    private fun maybeRaiseLayerNotice(config: ProfileConfig) {
+        val layers = config.layers ?: return
+        if (layerNoticeChecked) return
+        layerNoticeChecked = true
+        if (!layers.noticeDue(repository.layerNoticeAcknowledged())) return
+        mutableState.update {
+            it.copy(
+                dialogVisible = true,
+                dialogType = DialogType.NOTICE,
+                dialogTitleRes = R.string.layer_notice_title,
+                dialogMessageRes = 0,
+                dialogMessage = "",
+                dialogDocUrl = null,
+                dialogConfirmLabelRes = R.string.dialog_dismiss,
+                dialogLayerNotice = layers,
             )
         }
     }
@@ -793,6 +823,7 @@ class GhostlockViewModel(
                 profileFallback = config.fallbackTo,
                 activeBuiltinProfile = profileController.activeBuiltinRelease(),
                 activeUserProfile = profileController.activeUserProfile(),
+                profileLayers = config.layers,
             )
         }
     }
@@ -1066,9 +1097,13 @@ class GhostlockViewModel(
                 shizukuStatus = snapshot.shizukuStatus,
                 profileInvalidPaths = loaded?.invalidPaths ?: emptySet(),
                 executionHasProfile = loaded?.hasProfile ?: false,
+                profileLayers = loaded?.layers,
                 customCpuPair = loaded?.let(::customCpuPairOf),
             )
         }
+        /* At start-up, and from the resolution the run button was just judged
+         * on — the same one a run uses (§C.12b). */
+        loaded?.let(::maybeRaiseLayerNotice)
     }
 
     private fun importDocuments(uris: List<String>) {
@@ -1440,6 +1475,9 @@ class GhostlockViewModel(
 
     private fun dismissDialog(clearConfirmation: Boolean = true) {
         if (clearConfirmation) pendingConfirmation = null
+        /* Shown is as good as read: acknowledging on the way out keeps the
+         * notice to once per build however it was dismissed. */
+        state.value.dialogLayerNotice?.let { repository.acknowledgeLayerNotice(it.build) }
         mutableState.update {
             it.copy(
                 dialogVisible = false,
@@ -1461,6 +1499,7 @@ class GhostlockViewModel(
                 dialogInput = "",
                 dialogConfirmLabelRes = R.string.parse_start,
                 dialogDocUrl = null,
+                dialogLayerNotice = null,
                 userProfileRenameTarget = null,
             )
         }

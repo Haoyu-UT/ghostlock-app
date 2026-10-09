@@ -153,6 +153,9 @@
     <string name="user_profile_convert_failed">Could not export a v2 copy</string>
     <string name="loaded_user_profile">User profile: %1$s</string>
     <string name="builtin_profile_label">Built-in profile: %1$s</string>
+    <string name="layer_import_not_applied">Imported profile %1$s is loaded but not applied: this kernel has a bundled profile.</string>
+    <string name="layer_overrides_not_applied">Stored parameter overrides are disabled: they were written by a different build. Save them again in Parameters to re-enable.</string>
+    <string name="layer_notice_title">Disabled by this update</string>
     <string name="user_profile_meta">%1$s · %2$s</string>
     <string name="user_profile_export">Export</string>
     <string name="user_profile_rename">Rename</string>

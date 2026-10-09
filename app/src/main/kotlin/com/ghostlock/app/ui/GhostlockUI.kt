@@ -52,6 +52,7 @@ import com.ghostlock.app.R
 import com.ghostlock.app.domain.model.CpuPair
 import com.ghostlock.app.domain.model.ExecutionFieldValue
 import com.ghostlock.app.domain.model.ProfileFieldNode
+import com.ghostlock.app.domain.model.ProfileLayers
 import com.ghostlock.app.domain.model.ShizukuStatus
 import com.ghostlock.app.domain.model.UserProfileFile
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -121,6 +122,12 @@ data class GhostlockUiState(
     val dialogConfirmLabelRes: Int = R.string.parse_start,
     /** Documentation URL shown as an extra button on a NOTICE dialog. */
     val dialogDocUrl: String? = null,
+    /**
+     * Layers of the resolution that raised the start-up notice; non-null means
+     * the dialog body is built from this instead of [dialogMessageRes], so it
+     * states the layers that are already inactive (§C.12b).
+     */
+    val dialogLayerNotice: ProfileLayers? = null,
     val overwriteDialogVisible: Boolean = false,
     val overwriteMessage: String = "",
     val logLines: List<GhostlockLogLine> = emptyList(),
@@ -159,6 +166,8 @@ data class GhostlockUiState(
     val userProfiles: List<UserProfileFile> = emptyList(),
     /** Loaded user document feeding the imported layer; null means none. */
     val activeUserProfile: String? = null,
+    /** Which layers the last resolution applied, and which it deliberately did not. */
+    val profileLayers: ProfileLayers? = null,
     /** File name of the open user-profile detail screen, null when closed. */
     val userProfileDetail: String? = null,
     val userProfileRenameTarget: String? = null,
@@ -166,6 +175,23 @@ data class GhostlockUiState(
 )
 
 enum class DialogType { NONE, LIST, INPUT, CONFIRM, NOTICE }
+
+/**
+ * One line per layer that is present but deliberately not applied. Shared by
+ * the start-up notice and the profile screen's banner, so the two can never
+ * describe the same state differently.
+ */
+@Composable
+internal fun layerNoticeBody(layers: ProfileLayers): String = buildList {
+    val imported = layers.imported
+    if (imported != null && !layers.importedApplied) {
+        add(stringResource(R.string.layer_import_not_applied, imported))
+    }
+    if (layers.overridesPresent && !layers.overridesApplied) {
+        add(stringResource(R.string.layer_overrides_not_applied))
+    }
+}.joinToString("\n\n")
+
 
 data class GhostlockLogLine(val text: String, val color: Int)
 
@@ -548,8 +574,13 @@ private fun GhostlockDialog(
                 }
 
                 DialogType.NOTICE -> {
+                    val layerNotice = state.dialogLayerNotice
                     Text(
-                        text = stringResource(state.dialogMessageRes),
+                        text = if (layerNotice != null) {
+                            layerNoticeBody(layerNotice)
+                        } else {
+                            stringResource(state.dialogMessageRes)
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         style = MiuixTheme.textStyles.body2,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,

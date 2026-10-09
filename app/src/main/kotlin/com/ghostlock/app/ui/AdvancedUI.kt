@@ -36,6 +36,7 @@ import com.ghostlock.app.BuildConfig
 import com.ghostlock.app.R
 import com.ghostlock.app.domain.model.ProfileConfig
 import com.ghostlock.app.domain.model.ProfileFieldNode
+import com.ghostlock.app.domain.model.ProfileLayers
 import com.ghostlock.app.domain.model.UserProfileFile
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -96,6 +97,15 @@ private fun ProfileDocsCard(onOpen: () -> Unit) {
             onClick = onOpen,
         )
     }
+}
+
+@Composable
+private fun ProfileLayerNotice(layers: ProfileLayers?, modifier: Modifier = Modifier) {
+    /* §C.12: a layer that is present but deliberately not applied has to say so,
+     * or the values on screen look like the ones the run will use. The start-up
+     * notice (§C.12a) is the loud version of the same lines. */
+    if (layers == null || !layers.hasInactiveLayer) return
+    ProfileHintBanner(text = layerNoticeBody(layers), modifier = modifier, warning = true)
 }
 
 @Composable
@@ -292,6 +302,12 @@ internal fun ParameterScreen(
                             state.activeBuiltinProfile ?: stringResource(R.string.load_builtin_auto),
                         )
                     },
+                )
+            }
+            item(key = "layer-notice") {
+                ProfileLayerNotice(
+                    layers = state.profileLayers,
+                    modifier = Modifier.preferencePageItem(),
                 )
             }
             item(key = "load") {
@@ -713,6 +729,12 @@ internal fun ProfileOverrideScreen(
                 ProfileHintBanner(
                     text = source,
                     warning = state.activeBuiltinProfile != null,
+                    modifier = Modifier.preferencePageItem(),
+                )
+            }
+            item(key = "layer-notice") {
+                ProfileLayerNotice(
+                    layers = state.profileLayers,
                     modifier = Modifier.preferencePageItem(),
                 )
             }

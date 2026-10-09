@@ -1,9 +1,11 @@
 # Bundling the diting profile — and stopping a stale one from running
 
-Status: **rationale record.** The binding specification is `PORT-PLAN.md` Phase 8 (27 items) in the
-project root — **read that first**; this file explains why the design is shaped the way it is, and
-its "Steps" section predates the decision in §B/§C and should not be followed literally. L-level: it
-touches the asset→Kotlin→wire profile contract. 2026-10-09.
+Status: **rationale record, implemented 2026-10-09.** The binding specification is `PORT-PLAN.md`
+Phase 8 in the project root — **read that first**, and its *Implementation status* for what landed;
+this file explains why the design is shaped the way it is. Its "Steps" section and the G1/G2/G3
+sketch below are the **pre-implementation** design and are kept only as the reasoning trail; two
+things in them turned out differently, and both are corrected in place below. L-level: it touches
+the asset→Kotlin→wire profile contract.
 
 **Superseded in one respect.** This file proposed a one-shot, versioned *migration* that would
 quarantine the user layers on upgrade. That was replaced: a migration only fixes the layers present
@@ -84,10 +86,14 @@ concrete paths:
 
 ## The guards
 
-**G1 — a digest of the effective profile, checked end to end.** This is the one that matters, because
-it is a *detector* rather than a policy: it catches every stale path above at once, plus any we have
-not thought of, plus a silent key drop on either side. Any of those changes the effective content on
-one side of the wire and not the other.
+**G1 — a digest of the effective profile, checked end to end.** *Corrected at implementation: the
+claim below that it "catches every stale path above at once" is **wrong**, and the shipped comment
+says so. Staleness resolves to the same document on both sides of the wire, so both hash it equally
+and the digest passes. What it does catch is a **dropped key** — a key one side declares and the
+other does not, which is the failure this fork actually hit — plus a mangled or truncated payload.
+Stopping stale layers is §B's job, not the digest's; §B and §C were implemented first for that
+reason.* It remains a *detector* rather than a policy, which is why it is worth carrying alongside
+the policy.
 
 * Kotlin computes a 64-bit digest over the canonicalised resolved profile (sorted key→value pairs)
   when building the GLK1 wire.
@@ -106,14 +112,40 @@ overrides are active. Cheap, and it closes the hole that caught us today.
 same release, log it and show it. A profile generation key would let a builtin declare itself newer
 than what the user imported; that is the next step if G1 proves noisy in practice.
 
+**G2/G3 as built, and the start-up dialog added after the device gate.** The run log carries one
+`profile layers:` line naming every layer and why it did or did not apply (§C.10-11), and the profile
+screen shows a banner for each inactive layer. That banner turned out to be **too buried to be the
+only surface**: the user it exists for — someone who just upgraded with an import and overrides in
+place — has no reason to open that screen, so in practice they never learn that their settings
+stopped applying. So on the first start after the layers go inactive the app raises a **dialog with
+one confirm button** naming what was disabled and why (PORT-PLAN §C.12a).
+
+**Why it is a report and not a promise (§C.12b).** The dialog is built from the `ProfileLayers`
+object of the *resolution that just ran* — the same object the run path and the editor read — rather
+than from a second predicate the UI evaluates for itself. Two properties follow, and both are
+tested: what the dialog says is exactly what a run would do at that moment (the layers are already
+inactive, not scheduled to be), and the two can never disagree, which a recomputed predicate would
+eventually. It fires **once per build identity** (the acknowledgement is persisted, and a new build
+is a new identity), so it cannot nag; the banner stays for every later visit and for anyone who
+dismisses the dialog without reading it.
+
 ## Steps
 
-1. Decide the canonical flat names for the three anchor keys and extend `routeFieldKey`.
+*Superseded by the §B–§F implementation; kept as the record of what was planned. Step 1 was
+withdrawn — `routeFieldKey` is dead code, see "There is no blocker" above.*
+
+1. ~~Decide the canonical flat names for the three anchor keys and extend `routeFieldKey`.~~
 2. Add the diting conf to `app/src/main/assets/kernel_profiles/` and register it in `index.conf`.
 3. Rebuild the asset copy from the same source as the released conf — one source, not two.
 4. Implement G1 (Kotlin digest + wire section; native recompute + fatal compare + log).
 5. Implement G2 and G3 (logging and UI).
 6. Gates, then a device run proving the anchor specifically survives the builtin path.
+
+**What was built instead, and where:** the layer policy and the run-log reporting (§B/§C) come
+first because they are what actually stop a stale layer; the digest (§E) is the detector, with its
+scope stated in both implementations; the cache (§F) and the build identity (§D) support §B.7.
+`AndroidProfileConfigController.resolve()` is the single place the layer decision is made, and
+`ProfileLayers` (in `GhostlockModels.kt`) is what the log and the UI read.
 
 ## Gates
 

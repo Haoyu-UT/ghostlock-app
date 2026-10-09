@@ -153,6 +153,9 @@
     <string name="user_profile_convert_failed">导出 v2 配置失败</string>
     <string name="loaded_user_profile">用户配置：%1$s</string>
     <string name="builtin_profile_label">内置配置：%1$s</string>
+    <string name="layer_import_not_applied">导入的配置 %1$s 已加载但未生效：此内核已有内置配置。</string>
+    <string name="layer_overrides_not_applied">已保存的参数覆盖已停用：它们由其他版本写入。在“参数”中重新保存即可恢复。</string>
+    <string name="layer_notice_title">本次更新后已停用</string>
     <string name="user_profile_meta">%1$s · %2$s</string>
     <string name="user_profile_export">导出</string>
     <string name="user_profile_rename">重命名</string>
