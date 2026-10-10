@@ -34,8 +34,11 @@ bypass there as well, so it saves time even where it isn't required.
 |--------------------------------------------------------|------------------------------------------------------------------|
 | `5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284`  | Redmi K50 Ultra (`diting`) — tested end to end                   |
 
-5.10 is not an upstream family: there is no built-in profile for it and no 5.10 entry in the
-offset extractor. The profile is imported as a user document rather than shipped as an asset.
+Upstream has no 5.10 family — no built-in profile for it, and no 5.10 entry in the offset
+extractor. In this fork the profile ships as a **built-in asset**
+(`app/src/main/assets/kernel_profiles/5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284.conf`,
+registered in `index.conf`), so a device on that exact kernel needs no import — and a bundled
+profile is authoritative for its release.
 
 ## Possibly supported — untested
 
