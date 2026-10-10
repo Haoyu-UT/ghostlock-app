@@ -6,7 +6,9 @@
 
 | Kernel | 机型 | 代号 | 状态 |
 |---|---|---|---|
-| `5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284` | Redmi K50 Ultra · Xiaomi 12T Pro | `diting` | **已端到端验证** |
+| `5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284` | Redmi K50 Ultra · Xiaomi 12T Pro | `diting` | **已端到端验证** —— Global `OS2.0.206.0`–`OS3.0.6.0` |
+| `5.10.226-android12-9-00064-gea4a6f067d3f-ab12969919` | Redmi K50 Ultra · Xiaomi 12T Pro | `diting` | **已端到端验证** —— Global `OS2.0.3.0`–`OS2.0.205.0`（2026-10-10） |
+| `5.10.209-android12-9-00019-g4ea09a298bb4-ab12292661` | Redmi K50 Ultra · Xiaomi 12T Pro | `diting` | **已端到端验证** —— Global `OS1.0.11.0` · `OS1.0.12.0` · `OS2.0.1.0` · `OS2.0.2.0`（2026-10-10） |
 
 Redmi K50 Ultra 的代号是 `diting`（SM8475 / 骁龙 8+ Gen 1）。**Xiaomi 12T Pro 是同一台设备**——
 同一个代号，三个零售名（也称 Redmi K50 至尊版）。它不是第二个移植。

@@ -32,13 +32,16 @@ bypass there as well, so it saves time even where it isn't required.
 
 | Kernel                                                 | Devices                                                          |
 |--------------------------------------------------------|------------------------------------------------------------------|
-| `5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284`  | Redmi K50 Ultra (`diting`) — tested end to end                   |
+| `5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284`  | Redmi K50 Ultra (`diting`) — Global `OS2.0.206.0`–`OS3.0.6.0`; tested end to end |
+| `5.10.226-android12-9-00064-gea4a6f067d3f-ab12969919`  | same device — Global `OS2.0.3.0`–`OS2.0.205.0`; tested end to end (2026-10-10) |
+| `5.10.209-android12-9-00019-g4ea09a298bb4-ab12292661`  | same device — Global `OS1.0.11.0`, `OS1.0.12.0`, `OS2.0.1.0`, `OS2.0.2.0`; tested end to end (2026-10-10) |
 
 Upstream has no 5.10 family — no built-in profile for it, and no 5.10 entry in the offset
-extractor. In this fork the profile ships as a **built-in asset**
-(`app/src/main/assets/kernel_profiles/5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284.conf`,
-registered in `index.conf`), so a device on that exact kernel needs no import — and a bundled
-profile is authoritative for its release.
+extractor. In this fork the profiles ship as **built-in assets**
+(`app/src/main/assets/kernel_profiles/<exact uname -r>.conf`, registered in `index.conf`), so a
+device on one of those exact kernels needs no import — and a bundled profile is authoritative for
+its release. The two newer builds were each verified by one full gate run plus a 3-run series
+(`5.10.226` completed 1/3, `5.10.209` 2/3), so "tested end to end" means at least one full pass.
 
 ## Possibly supported — untested
 

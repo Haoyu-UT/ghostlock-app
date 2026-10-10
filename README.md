@@ -6,7 +6,9 @@
 
 | Kernel | Devices | Codename | Status |
 |---|---|---|---|
-| `5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284` | Redmi K50 Ultra · Xiaomi 12T Pro | `diting` | **tested end to end** |
+| `5.10.236-android12-9-00003-gfb24cf99ad97-ab14313284` | Redmi K50 Ultra · Xiaomi 12T Pro | `diting` | **tested end to end** — Global `OS2.0.206.0`–`OS3.0.6.0` |
+| `5.10.226-android12-9-00064-gea4a6f067d3f-ab12969919` | Redmi K50 Ultra · Xiaomi 12T Pro | `diting` | **tested end to end** — Global `OS2.0.3.0`–`OS2.0.205.0` |
+| `5.10.209-android12-9-00019-g4ea09a298bb4-ab12292661` | Redmi K50 Ultra · Xiaomi 12T Pro | `diting` | **tested end to end** — Global `OS1.0.11.0` · `OS1.0.12.0` · `OS2.0.1.0` · `OS2.0.2.0` |
 
 The Redmi K50 Ultra is codename `diting` (SM8475 / Snapdragon 8+ Gen 1). **Xiaomi 12T Pro is the
 same physical device** — one codename, three retail names (also sold as the Redmi K50 Extreme
@@ -139,8 +141,8 @@ that verified it is described in `PORT-PLAN.md` there.
 
 ## Reproducing
 
-The diting profile ships as a **built-in asset**, so a device on that exact kernel needs no import
-and no setup. Two layers used to outrank a built-in profile and no longer do: an imported document
+The diting profiles ship as **built-in assets**, so a device on one of those exact kernels needs no
+import and no setup. Two layers used to outrank a built-in profile and no longer do: an imported document
 is **not applied** while a bundled profile covers your kernel, and parameter overrides apply **only
 when the installed build wrote them**. Both stay stored — the app raises a one-time *"Disabled by
 this update"* notice saying what is off and why, keeps a banner on the profile screen, and re-saving
