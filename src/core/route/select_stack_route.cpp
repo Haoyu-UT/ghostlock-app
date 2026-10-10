@@ -243,7 +243,8 @@ namespace ghostlock::route {
      * route owns: the dup2 pass below lands on arbitrary app fd numbers. */
     struct SelectedFdBackupEntry {
         int32_t fd;
-        int32_t backup; /* F_DUPFD copy; -1 when the fd was closed before */
+        /* F_DUPFD copy; -1 if the slot was closed or could not be copied. */
+        int32_t backup;
         int32_t cloexec;
     };
 
@@ -276,19 +277,37 @@ namespace ghostlock::route {
         }
         selected_fd_backup_n = 0;
         size_t recorded = 0;
+        int32_t lost = 0;
+        int32_t lost_errno = 0;
         for (int32_t fd = 0; fd < PSELECT_ROUTE_NFDS; fd++) {
             if (FD_ISSET(fd, in) || FD_ISSET(fd, out) || FD_ISSET(fd, ex)) {
                 if (recorded < selected_fd_backup.size()) {
                     SelectedFdBackupEntry &e = selected_fd_backup[recorded++];
                     e.fd = fd;
-                    e.backup = fcntl(fd, F_DUPFD_CLOEXEC, PSELECT_ROUTE_NFDS + 64);
-                    e.cloexec = e.backup >= 0 ? (fcntl(fd, F_GETFD) & FD_CLOEXEC) : 0;
+                    /* Read the flags before the dup2 below rebinds the slot. */
+                    const int32_t flags = fcntl(fd, F_GETFD);
+                    if (flags < 0) {
+                        e.backup = -1;
+                        e.cloexec = 0;
+                    } else {
+                        e.cloexec = flags & FD_CLOEXEC;
+                        e.backup = fcntl(fd, F_DUPFD_CLOEXEC, PSELECT_ROUTE_NFDS + 64);
+                        if (e.backup < 0) {
+                            if (lost == 0) lost_errno = errno;
+                            lost++;
+                        }
+                    }
                 }
                 dup2(high_read, fd);
             }
         }
         /* At most PSELECT_ROUTE_NFDS bits can be set; the guard is for a resize. */
         selected_fd_backup_n = recorded;
+        if (lost > 0) {
+            pr_warning("pselect fd backup: %d live descriptor(s) could not be copied "
+                       "(errno=%d); they are closed when the route restores\n",
+                       lost, lost_errno);
+        }
         close(high_read);
         dup2(read_fd, PSELECT_ROUTE_NFDS - 1);
         FD_SET(PSELECT_ROUTE_NFDS - 1, ex);
